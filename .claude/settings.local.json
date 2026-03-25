@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bash .claude/skills/project-memory/scripts/init_memory.sh)"
+      "Bash(bash .claude/skills/project-memory/scripts/init_memory.sh)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/GitHub CLI\")",
+      "Bash(gh --version)",
+      "Bash(gh auth:*)",
+      "Bash(/d/anaconda3/python.exe backend/utils/smoke_test.py)"
     ]
   }
 }
