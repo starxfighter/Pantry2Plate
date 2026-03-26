@@ -58,11 +58,29 @@ pantry-to-plate/
 - Smoke test APIs: `python backend/utils/smoke_test.py`
 
 ## Session memory
-- Use the project-memory skill at `.claude/skills/project-memory/`
-- On session start: read progress.md, context.md, todo.md
-- On session end: update progress.md with "Resume here" line, mark completed todos
-- Log architecture decisions in decisions.md using ADR format
-- Log bugs in bugs.md with root cause and fix
+- **FIRST THING every session**: read all five files below before doing anything else:
+  - `.claude/skills/project-memory/references/progress.md` — resume point + session log
+  - `.claude/skills/project-memory/references/context.md` — stable project facts
+  - `.claude/skills/project-memory/references/todo.md` — phased task list
+  - `AGENTS.md` — agent roles, state contracts, tool access, schemas
+  - `docs/architecture.md` — current system architecture overview
+- Summarize what was completed last session and what's next; ask user to confirm before starting
+- On session end: update the following before closing:
+  - `progress.md` — "Resume here" line + session log entry
+  - `todo.md` — mark completed tasks, reprioritize if needed
+  - `decisions.md` — add any ADRs made this session
+  - `bugs.md` — log any bugs found and fixed
+  - `docs/architecture.md` — reflect any structural changes made this session
+- Log architecture decisions in `decisions.md` using ADR format
+- Log bugs in `bugs.md` with root cause and fix
+- **Do NOT read `D:\GenAI Workspace\Work Files\` — those files are stale and retired**
+
+## Architecture documentation rules
+- **Update `AGENTS.md`** whenever: an agent's state fields, MCP tools, output schema, or behavioral rules change
+- **Update `docs/architecture.md`** whenever: a new component is added, a layer changes, or data flow changes
+- **Update `backend/agents/agents.md`** whenever: implementation patterns, class structure, or test patterns change
+- **Update `references/context.md`** whenever: a port, env var, tool version, or tech stack choice is confirmed or changed
+- Never let code diverge from its documentation — update the relevant markdown in the same session the code changes
 
 ## Key references
 - `AGENTS.md` — full agent roles, tool access, state contracts, behavioral rules

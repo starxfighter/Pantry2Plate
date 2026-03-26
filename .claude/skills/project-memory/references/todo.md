@@ -19,8 +19,11 @@ Add newly discovered sub-tasks inline under the relevant phase.
 
 ## Phase 2 — Dependencies & Configuration
 
-- [ ] Write `backend/requirements.txt` with pinned versions
-- [ ] Write `backend/utils/logging.py` (structured logging setup)
+- [x] Write `backend/requirements.txt` with pinned versions
+- [x] Rename `backend/utils/logging.py` → `log_config.py` (stdlib name conflict)
+- [x] Write `backend/utils/smoke_test.py` — verify all 4 API connections
+- [x] Verify LangSmith trace appears in `pantry-to-plate` project
+- [ ] Write `backend/utils/log_config.py` (structured logging setup)
 - [ ] Write `backend/utils/session.py` (session ID generation + storage helpers)
 
 ---
