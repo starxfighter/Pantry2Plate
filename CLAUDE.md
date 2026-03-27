@@ -56,6 +56,7 @@ pantry-to-plate/
 - Lint: `ruff check backend/ tests/`
 - Verify graph: `python -c "from backend.graph import graph; print(graph.get_graph().draw_mermaid())"`
 - Smoke test APIs: `python backend/utils/smoke_test.py`
+- Graph smoke test: `PYTHONPATH="D:/GenAI Workspace/Pantry2Plate" /d/anaconda3/python.exe -u backend/utils/graph_test.py`
 
 ## Session memory
 - **FIRST THING every session**: read all five files below before doing anything else:
@@ -85,4 +86,6 @@ pantry-to-plate/
 ## Key references
 - `AGENTS.md` — full agent roles, tool access, state contracts, behavioral rules
 - `backend/agents/agents.md` — Python implementation details, test patterns
+- `docs/architecture.md` — system architecture, data flow, component overview
+- `docs/cross_platform.md` — changes needed to run on Linux/macOS
 - `.env.example` — all 18+ environment variables documented

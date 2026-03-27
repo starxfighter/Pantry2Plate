@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pantry to Plate</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Playfair+Display:wght@700&display=swap"
+    rel="stylesheet"
+  />
+
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Design tokens                                                         */
+    /* ------------------------------------------------------------------ */
+    :root {
+      --terracotta:       #C0562A;
+      --terracotta-light: #FAE8E3;
+      --cream:            #FDF8F3;
+      --charcoal:         #2C2C2A;
+      --sage:             #5A7A6A;
+      --mist:             #F0F4F2;
+      --border:           #E5DDD5;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Reset / base                                                          */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Ensure the HTML hidden attribute always wins over display:flex/grid rules */
+    [hidden] { display: none !important; }
+
+    body {
+      font-family: 'Lato', sans-serif;
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--charcoal);
+      background: var(--cream);
+    }
+
+    h1, h2, h3 {
+      font-family: 'Playfair Display', serif;
+      line-height: 1.25;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Page layout                                                           */
+    /* ------------------------------------------------------------------ */
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Header                                                                */
+    /* ------------------------------------------------------------------ */
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 2.75rem;
+      color: var(--terracotta);
+      letter-spacing: -0.5px;
+    }
+
+    header p.tagline {
+      margin-top: 0.5rem;
+      color: var(--sage);
+      font-size: 1.05rem;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Search form                                                           */
+    /* ------------------------------------------------------------------ */
+    .search-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .search-card label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+      color: var(--charcoal);
+    }
+
+    .search-card textarea {
+      width: 100%;
+      min-height: 90px;
+      resize: vertical;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Lato', sans-serif;
+      font-size: 1rem;
+      color: var(--charcoal);
+      background: var(--cream);
+      transition: border-color 0.15s;
+    }
+
+    .search-card textarea:focus {
+      outline: none;
+      border-color: var(--terracotta);
+    }
+
+    .search-card textarea::placeholder {
+      color: #b0a89e;
+    }
+
+    .search-card .actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .btn-primary {
+      padding: 0.65rem 1.75rem;
+      background: var(--terracotta);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Lato', sans-serif;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #a84924;
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-ghost {
+      padding: 0.65rem 1.25rem;
+      background: transparent;
+      color: var(--charcoal);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Lato', sans-serif;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+      border-color: var(--charcoal);
+    }
+
+    .btn-ghost:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Status bar                                                            */
+    /* ------------------------------------------------------------------ */
+    #status {
+      min-height: 1.5rem;
+      font-size: 0.9rem;
+      color: var(--sage);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    #status.error {
+      color: var(--terracotta);
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--sage);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Results section                                                       */
+    /* ------------------------------------------------------------------ */
+    #results-section {
+      display: none;
+    }
+
+    #results-section.visible {
+      display: block;
+    }
+
+    .results-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .results-header h2 {
+      font-size: 1.6rem;
+      color: var(--charcoal);
+    }
+
+    .trace-link {
+      font-size: 0.85rem;
+      color: var(--sage);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.15s;
+    }
+
+    .trace-link:hover {
+      border-color: var(--sage);
+    }
+
+    #trace-footer {
+      text-align: center;
+      margin-top: 1.5rem;
+    }
+
+    .trace-footer-link {
+      font-size: 0.8rem;
+      color: #bbb;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      transition: color 0.15s;
+    }
+
+    .trace-footer-link:hover { color: var(--sage); }
+
+    /* ------------------------------------------------------------------ */
+    /* Recipe grid — 2-col desktop, 1-col mobile                            */
+    /* ------------------------------------------------------------------ */
+    #recipe-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
+    }
+
+    @media (max-width: 640px) {
+      #recipe-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Recipe card                                                           */
+    /* ------------------------------------------------------------------ */
+    @keyframes fade-slide-up {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .recipe-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.875rem;
+      opacity: 0;
+      animation: fade-slide-up 0.3s ease forwards;
+    }
+
+    /* Header: name/badge/meta left, donut right */
+    .rc-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .rc-header-left {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .rc-name {
+      font-size: 1.05rem;
+      color: var(--charcoal);
+      line-height: 1.3;
+    }
+
+    .rc-source {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--sage);
+      background: var(--mist);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      align-self: flex-start;
+    }
+
+    .rc-meta {
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    /* Donut chart */
+    .rc-donut { flex-shrink: 0; }
+
+    .donut-bg {
+      fill: none;
+      stroke: var(--border);
+      stroke-width: 5;
+    }
+
+    .donut-fill {
+      fill: none;
+      stroke: var(--terracotta);
+      stroke-width: 5;
+      stroke-linecap: round;
+    }
+
+    .donut-text {
+      font-family: 'Lato', sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      fill: var(--charcoal);
+    }
+
+    /* Ingredient pills */
+    .rc-pills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+
+    .rc-pill {
+      font-size: 0.76rem;
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 20px;
+    }
+
+    .rc-pill.have    { background: var(--mist);  color: var(--sage); }
+    .rc-pill.missing { background: #fde8e8;       color: #c0392b;     }
+
+    .rc-more-btn {
+      background: none;
+      border: 1px dashed var(--border);
+      border-radius: 20px;
+      font-family: 'Lato', sans-serif;
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: #aaa;
+      padding: 0.2rem 0.6rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .rc-more-btn:hover { border-color: var(--charcoal); color: var(--charcoal); }
+
+    /* Collapsible summary */
+    .rc-summary-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .rc-summary {
+      font-size: 0.875rem;
+      color: #555;
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .rc-summary.expanded {
+      display: block;
+      overflow: visible;
+    }
+
+    .rc-toggle {
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: 'Lato', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--terracotta);
+      cursor: pointer;
+      align-self: flex-start;
+    }
+
+    .rc-toggle:hover { text-decoration: underline; }
+
+    /* Card footer */
+    .rc-footer {
+      margin-top: auto;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .rc-link {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--terracotta);
+      text-decoration: none;
+    }
+
+    .rc-link:hover { text-decoration: underline; }
+
+    /* ------------------------------------------------------------------ */
+    /* Ingredient pills (input area)                                         */
+    /* ------------------------------------------------------------------ */
+    .pill-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.75rem;
+    }
+
+    .ingredient-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      background: var(--terracotta-light);
+      color: var(--terracotta);
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+      border-radius: 20px;
+    }
+
+    .ingredient-pill button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--terracotta);
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0 0.1rem;
+      opacity: 0.55;
+      transition: opacity 0.15s;
+    }
+
+    .ingredient-pill button:hover {
+      opacity: 1;
+    }
+
+    .ingredient-count {
+      font-size: 0.82rem;
+      color: var(--sage);
+      font-weight: 700;
+      margin-top: 0.5rem;
+    }
+
+    .clear-pantry-btn {
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: 'Lato', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #bbb;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      margin-top: 0.2rem;
+      transition: color 0.15s;
+    }
+
+    .clear-pantry-btn:hover { color: var(--terracotta); }
+
+    /* ingredient chips */
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+
+    .chip {
+      font-size: 0.78rem;
+      padding: 0.15rem 0.6rem;
+      border-radius: 20px;
+      font-weight: 700;
+    }
+
+    .chip.have {
+      background: var(--mist);
+      color: var(--sage);
+    }
+
+    .chip.missing {
+      background: #f5f5f5;
+      color: #999;
+      text-decoration: line-through;
+    }
+
+    .card-footer {
+      margin-top: auto;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .card-footer a {
+      font-size: 0.85rem;
+      color: var(--terracotta);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .card-footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Dietary tags                                                          */
+    /* ------------------------------------------------------------------ */
+    .dietary-tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 0.1rem 0.5rem;
+      border-radius: 4px;
+      background: var(--mist);
+      color: var(--sage);
+      font-weight: 700;
+      text-transform: capitalize;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Filter bar                                                            */
+    /* ------------------------------------------------------------------ */
+    .filter-bar {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 2rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      min-width: 82px;
+      padding-top: 0.35rem;
+      flex-shrink: 0;
+    }
+
+    .cuisine-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .pill-toggle {
+      padding: 0.3rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: transparent;
+      color: var(--charcoal);
+      font-family: 'Lato', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .pill-toggle:hover {
+      border-color: var(--terracotta);
+      color: var(--terracotta);
+    }
+
+    .pill-toggle.active {
+      background: var(--terracotta);
+      border-color: var(--terracotta);
+      color: #fff;
+    }
+
+    .dietary-checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 1.5rem;
+      padding-top: 0.15rem;
+    }
+
+    .dietary-checks label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .dietary-checks input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      accent-color: var(--terracotta);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex: 1;
+      padding-top: 0.1rem;
+    }
+
+    .slider-wrap input[type="range"] {
+      flex: 1;
+      max-width: 180px;
+      accent-color: var(--terracotta);
+      cursor: pointer;
+    }
+
+    .slider-val {
+      font-size: 0.85rem;
+      color: var(--charcoal);
+      min-width: 90px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Mobile                                                                */
+    /* ------------------------------------------------------------------ */
+    @media (max-width: 600px) {
+      .search-card .actions {
+        flex-direction: column;
+      }
+
+      .btn-primary {
+        width: 100%;
+        padding: 0.85rem;
+        font-size: 1.05rem;
+        text-align: center;
+      }
+
+      .filter-group {
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+
+      .filter-label {
+        min-width: unset;
+        padding-top: 0;
+      }
+
+      .slider-wrap input[type="range"] {
+        max-width: none;
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Stepper                                                               */
+    /* ------------------------------------------------------------------ */
+    .stepper {
+      display: flex;
+      align-items: flex-start;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      margin-bottom: 1.5rem;
+      /* collapse transition */
+      max-height: 140px;
+      overflow: hidden;
+      opacity: 1;
+      transition: max-height 0.35s ease, opacity 0.3s ease,
+                  padding 0.35s ease, margin 0.35s ease, border 0.35s ease;
+    }
+
+    .stepper.collapsed {
+      max-height: 0;
+      opacity: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      margin-bottom: 0;
+      border-width: 0;
+    }
+
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 0 0 auto;
+    }
+
+    .step-circle {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #bbb;
+      transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+      position: relative;
+    }
+
+    .step.active .step-circle {
+      border-color: var(--terracotta);
+      background: var(--terracotta-light);
+      color: var(--terracotta);
+    }
+
+    /* Pulse ring on active step */
+    .step.active .step-circle::after {
+      content: '';
+      position: absolute;
+      inset: -5px;
+      border-radius: 50%;
+      border: 2px solid var(--terracotta);
+      opacity: 0;
+      animation: pulse-ring 1.4s ease-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.9); opacity: 0.6; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    .step.complete .step-circle {
+      border-color: var(--terracotta);
+      background: var(--terracotta);
+      color: #fff;
+    }
+
+    /* Remove pulse on complete */
+    .step.complete .step-circle::after { display: none; }
+
+    .step-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #ccc;
+      text-align: center;
+      max-width: 80px;
+      line-height: 1.3;
+      transition: color 0.3s ease;
+    }
+
+    .step.active .step-label  { color: var(--terracotta); }
+    .step.complete .step-label { color: var(--sage); }
+
+    .step-connector {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      align-self: flex-start;
+      margin-top: 16px; /* aligns with circle vertical centre */
+      position: relative;
+      overflow: hidden;
+    }
+
+    .step-connector::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--terracotta);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.4s ease;
+    }
+
+    .step-connector.filled::after { transform: scaleX(1); }
+
+    /* Mobile: hide labels, shrink circles */
+    @media (max-width: 480px) {
+      .stepper { padding: 1rem; }
+      .step-label { display: none; }
+      .step-circle { width: 28px; height: 28px; font-size: 0.75rem; }
+      .step-connector { margin-top: 13px; }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Error state                                                           */
+    /* ------------------------------------------------------------------ */
+    .error-state {
+      background: #fff5f2;
+      border: 1px solid #f5c2b0;
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .error-state p {
+      font-size: 0.95rem;
+      color: var(--terracotta);
+    }
+
+    .error-state p strong {
+      display: block;
+      font-size: 1rem;
+      margin-bottom: 0.25rem;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Empty / error states                                                  */
+    /* ------------------------------------------------------------------ */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #aaa;
+      font-size: 0.95rem;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Footer                                                                */
+    /* ------------------------------------------------------------------ */
+    footer {
+      margin-top: 4rem;
+      text-align: center;
+      font-size: 0.8rem;
+      color: #ccc;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+
+    <header>
+      <h1>Pantry to Plate</h1>
+      <p class="tagline">Tell us what's in your fridge — we'll find what to cook.</p>
+    </header>
+
+    <!-- Search form -->
+    <section class="search-card">
+      <label for="ingredient-input">What ingredients do you have?</label>
+      <textarea
+        id="ingredient-input"
+        placeholder="Tell me what you have... eggs, leftover chicken, cheddar cheese"
+        rows="3"
+      ></textarea>
+      <div id="pill-container" class="pill-container" hidden></div>
+      <p id="ingredient-count" class="ingredient-count" hidden></p>
+      <button id="clear-pantry-btn" class="clear-pantry-btn" type="button" hidden>
+        Clear pantry
+      </button>
+      <div class="actions">
+        <button class="btn-primary" id="search-btn" type="button">Find Recipes</button>
+        <button class="btn-ghost" id="clear-btn" type="button" disabled>Clear</button>
+      </div>
+    </section>
+
+    <!-- Filter bar -->
+    <section class="filter-bar" aria-label="Search filters">
+
+      <div class="filter-group">
+        <span class="filter-label">Cuisine</span>
+        <div class="cuisine-pills">
+          <button class="pill-toggle active" type="button" data-cuisine="">Any</button>
+          <button class="pill-toggle" type="button" data-cuisine="Italian">Italian</button>
+          <button class="pill-toggle" type="button" data-cuisine="Mexican">Mexican</button>
+          <button class="pill-toggle" type="button" data-cuisine="Asian">Asian</button>
+          <button class="pill-toggle" type="button" data-cuisine="American">American</button>
+          <button class="pill-toggle" type="button" data-cuisine="Mediterranean">Mediterranean</button>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <span class="filter-label">Dietary</span>
+        <div class="dietary-checks">
+          <label><input class="dietary-check" type="checkbox" value="vegetarian"> Vegetarian</label>
+          <label><input class="dietary-check" type="checkbox" value="vegan"> Vegan</label>
+          <label><input class="dietary-check" type="checkbox" value="gluten-free"> Gluten-Free</label>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <span class="filter-label">Cook Time</span>
+        <div class="slider-wrap">
+          <input
+            id="cook-time-slider"
+            type="range"
+            min="0" max="120" step="5" value="0"
+            aria-label="Maximum cook time in minutes"
+          />
+          <span id="cook-time-label" class="slider-val">Any</span>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Progress stepper (shown during search only) -->
+    <div id="stepper" class="stepper" hidden aria-label="Search progress">
+      <div class="step" data-idx="0">
+        <div class="step-circle"><span class="step-num">1</span></div>
+        <span class="step-label">Parsing<br>Ingredients</span>
+      </div>
+      <div class="step-connector" data-connector="0"></div>
+      <div class="step" data-idx="1">
+        <div class="step-circle"><span class="step-num">2</span></div>
+        <span class="step-label">Searching<br>Recipes</span>
+      </div>
+      <div class="step-connector" data-connector="1"></div>
+      <div class="step" data-idx="2">
+        <div class="step-circle"><span class="step-num">3</span></div>
+        <span class="step-label">Scoring &amp;<br>Ranking</span>
+      </div>
+      <div class="step-connector" data-connector="2"></div>
+      <div class="step" data-idx="3">
+        <div class="step-circle"><span class="step-num">4</span></div>
+        <span class="step-label">Done</span>
+      </div>
+    </div>
+
+    <!-- Error state (shown on SSE error event) -->
+    <div id="error-state" class="error-state" hidden role="alert">
+      <p><strong>Something went wrong</strong><span id="error-message"></span></p>
+      <button id="retry-btn" class="btn-primary" type="button">Try Again</button>
+    </div>
+
+    <!-- Status / progress -->
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <!-- Results -->
+    <section id="results-section" aria-label="Recipe results">
+      <div class="results-header">
+        <h2 id="results-title">Recipes for you</h2>
+        <a id="trace-link" class="trace-link" href="#" target="_blank" rel="noopener" hidden>
+          View agent trace ↗
+        </a>
+      </div>
+      <div id="recipe-grid"></div>
+      <p id="trace-footer" hidden>
+        <a id="trace-footer-link" class="trace-footer-link" href="#"
+           target="_blank" rel="noopener">View agent trace →</a>
+      </p>
+    </section>
+
+    <footer>Powered by Claude &amp; LangGraph</footer>
+
+  </div>
+
+  <script>
+    // ------------------------------------------------------------------ //
+    // Config                                                                //
+    // ------------------------------------------------------------------ //
+    const API_BASE = 'http://localhost:8000';
+
+    // ------------------------------------------------------------------ //
+    // DOM refs                                                              //
+    // ------------------------------------------------------------------ //
+    const inputEl        = document.getElementById('ingredient-input');
+    const searchBtn      = document.getElementById('search-btn');
+    const clearBtn       = document.getElementById('clear-btn');
+    const statusEl       = document.getElementById('status');
+    const resultsSection = document.getElementById('results-section');
+    const recipeGrid     = document.getElementById('recipe-grid');
+    const traceLink      = document.getElementById('trace-link');
+    const resultsTitle   = document.getElementById('results-title');
+    const pillContainer   = document.getElementById('pill-container');
+    const countEl         = document.getElementById('ingredient-count');
+    const clearPantryBtn  = document.getElementById('clear-pantry-btn');
+    const stepperEl       = document.getElementById('stepper');
+    const errorStateEl    = document.getElementById('error-state');
+    const errorMsgEl      = document.getElementById('error-message');
+    const retryBtn        = document.getElementById('retry-btn');
+    const traceFooter     = document.getElementById('trace-footer');
+    const traceFooterLink = document.getElementById('trace-footer-link');
+
+    // ------------------------------------------------------------------ //
+    // Session ID — persisted across page loads                              //
+    // ------------------------------------------------------------------ //
+    const SESSION_KEY = 'pantry2plate_session_id';
+    let sessionId = localStorage.getItem(SESSION_KEY);
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem(SESSION_KEY, sessionId);
+    }
+
+    // Restore saved pantry on page load (silent — server may not be running)
+    async function restorePantry() {
+      try {
+        const res = await fetch(`${API_BASE}/pantry/${sessionId}`);
+        if (!res.ok) return;
+        const items = await res.json();
+        if (Array.isArray(items) && items.length > 0) {
+          items.forEach(item => {
+            if (item && !ingredients.some(i => normalise(i) === normalise(item))) {
+              ingredients.push(item);
+            }
+          });
+          renderPills();
+        }
+      } catch { /* server not running — silently ignore */ }
+    }
+
+    // ------------------------------------------------------------------ //
+    // State                                                                 //
+    // ------------------------------------------------------------------ //
+    let activeRequest = null; // AbortController for in-flight fetch
+    let ingredients   = [];   // ordered list of confirmed ingredient strings
+
+    // Filter state
+    let filterCuisine  = '';        // '' = Any
+    let filterDietary  = new Set(); // active dietary restriction strings
+    let filterCookTime = 0;         // 0 = no limit
+
+    // ------------------------------------------------------------------ //
+    // Ingredient pill management                                            //
+    // ------------------------------------------------------------------ //
+    function normalise(s) {
+      return s.trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+
+    function commitInput(raw) {
+      // Split on commas, deduplicate against existing list, add new items.
+      const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+      let changed = false;
+      for (const part of parts) {
+        if (part && !ingredients.some(i => normalise(i) === normalise(part))) {
+          ingredients.push(part);
+          changed = true;
+        }
+      }
+      if (changed) renderPills();
+    }
+
+    function removeIngredient(index) {
+      ingredients.splice(index, 1);
+      renderPills();
+    }
+
+    function renderPills() {
+      pillContainer.innerHTML = '';
+      if (ingredients.length === 0) {
+        pillContainer.hidden    = true;
+        countEl.hidden          = true;
+        clearPantryBtn.hidden   = true;
+        return;
+      }
+      ingredients.forEach((name, i) => {
+        const pill = document.createElement('span');
+        pill.className = 'ingredient-pill';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('aria-label', `Remove ${name}`);
+        btn.textContent = '×';
+        btn.addEventListener('click', () => removeIngredient(i));
+        pill.append(document.createTextNode(name), btn);
+        pillContainer.appendChild(pill);
+      });
+      pillContainer.hidden  = false;
+      countEl.textContent   = `${ingredients.length} ingredient${ingredients.length !== 1 ? 's' : ''} detected`;
+      countEl.hidden        = false;
+      clearPantryBtn.hidden = false;
+    }
+
+    // ------------------------------------------------------------------ //
+    // Helpers                                                               //
+    // ------------------------------------------------------------------ //
+
+    // ------------------------------------------------------------------ //
+    // Stepper                                                               //
+    // ------------------------------------------------------------------ //
+    const _steps      = Array.from(stepperEl.querySelectorAll('.step'));
+    const _connectors = Array.from(stepperEl.querySelectorAll('.step-connector'));
+
+    // SSE message step value → index of the step that just completed
+    const STEP_COMPLETE_MAP = { searching: 0, scoring: 1, done: 2 };
+
+    function _resetStepper() {
+      _steps.forEach(s => {
+        s.classList.remove('active', 'complete');
+        const n = s.querySelector('.step-num');
+        if (n) n.textContent = s.dataset.idx ? String(Number(s.dataset.idx) + 1) : n.textContent;
+      });
+      _connectors.forEach(c => c.classList.remove('filled'));
+    }
+
+    function showStepper() {
+      _resetStepper();
+      stepperEl.classList.remove('collapsed');
+      stepperEl.hidden = false;
+      _steps[0].classList.add('active');
+    }
+
+    function collapseStepper() {
+      stepperEl.classList.add('collapsed');
+      stepperEl.addEventListener('transitionend', () => {
+        stepperEl.hidden = true;
+      }, { once: true });
+    }
+
+    function advanceStepper(completedIdx) {
+      for (let i = 0; i <= completedIdx; i++) {
+        _steps[i].classList.remove('active');
+        _steps[i].classList.add('complete');
+        const n = _steps[i].querySelector('.step-num');
+        if (n) n.textContent = '✓';
+        if (_connectors[i]) _connectors[i].classList.add('filled');
+      }
+      if (completedIdx + 1 < _steps.length) {
+        _steps[completedIdx + 1].classList.add('active');
+      }
+    }
+
+    function showError(message) {
+      collapseStepper();
+      errorMsgEl.textContent = message ? `: ${message}` : '';
+      errorStateEl.hidden = false;
+    }
+
+    function hideError() {
+      errorStateEl.hidden = true;
+      errorMsgEl.textContent = '';
+    }
+
+    // ------------------------------------------------------------------ //
+    // Filter helpers                                                        //
+    // ------------------------------------------------------------------ //
+    function buildFilters() {
+      const f = {};
+      if (filterCuisine)          f.cuisine       = filterCuisine;
+      if (filterDietary.size > 0) f.dietary       = [...filterDietary];
+      if (filterCookTime > 0)     f.max_cook_time = filterCookTime;
+      return f;
+    }
+
+    function setStatus(message, { loading = false, error = false } = {}) {
+      statusEl.className = error ? 'error' : '';
+      statusEl.innerHTML = loading
+        ? `<span class="spinner"></span>${message}`
+        : message;
+    }
+
+    function clearStatus() {
+      statusEl.className = '';
+      statusEl.innerHTML = '';
+    }
+
+    function setSearching(on) {
+      searchBtn.disabled = on;
+      clearBtn.disabled  = !on;
+      if (!on) clearBtn.disabled = false;
+    }
+
+    // ------------------------------------------------------------------ //
+    // renderCards — recipe grid population                                  //
+    // ------------------------------------------------------------------ //
+
+    // Pill data store: avoids embedding JSON in HTML attributes
+    const _pillData = new Map();
+    let   _pillId   = 0;
+
+    function _pillsHtml(items, cls) {
+      const MAX = 5;
+      const shown = items.slice(0, MAX);
+      const rest  = items.slice(MAX);
+      let html = shown.map(i => `<span class="rc-pill ${cls}">${i}</span>`).join('');
+      if (rest.length > 0) {
+        const id = `p${_pillId++}`;
+        _pillData.set(id, { items: rest, cls });
+        html += `<button class="rc-more-btn" type="button" data-pid="${id}">+${rest.length} more</button>`;
+      }
+      return html;
+    }
+
+    function renderCards(recipes) {
+      recipeGrid.innerHTML = '';
+      _pillData.clear();
+
+      if (!recipes || recipes.length === 0) {
+        recipeGrid.innerHTML = '<p class="empty-state">No recipes found. Try different ingredients.</p>';
+        resultsTitle.textContent = 'No recipes found';
+        return;
+      }
+
+      const R    = 20;
+      const CIRC = 2 * Math.PI * R; // ≈ 125.66
+
+      recipes.forEach((recipe, idx) => {
+        const score = typeof recipe.match_score === 'number' ? recipe.match_score : 0;
+        const dash  = ((score / 100) * CIRC).toFixed(2);
+
+        const have    = recipe.ingredients_have    || [];
+        const missing = recipe.ingredients_missing || [];
+        const hasPills = have.length > 0 || missing.length > 0;
+
+        const metaParts = [
+          recipe.cuisine,
+          recipe.cook_time_minutes ? `${recipe.cook_time_minutes} min` : null,
+        ].filter(Boolean);
+
+        const card = document.createElement('article');
+        card.className = 'recipe-card';
+        card.style.animationDelay = `${(idx * 0.06).toFixed(2)}s`;
+
+        card.innerHTML = `
+          <div class="rc-header">
+            <div class="rc-header-left">
+              <h3 class="rc-name">${recipe.name || 'Recipe'}</h3>
+              ${recipe.source ? `<span class="rc-source">${recipe.source}</span>` : ''}
+              ${metaParts.length ? `<p class="rc-meta">${metaParts.join(' · ')}</p>` : ''}
+            </div>
+            <div class="rc-donut" aria-label="Match score ${Math.round(score)}%">
+              <svg viewBox="0 0 50 50" width="52" height="52">
+                <circle class="donut-bg"   cx="25" cy="25" r="${R}" />
+                <circle class="donut-fill" cx="25" cy="25" r="${R}"
+                        stroke-dasharray="${dash} ${CIRC.toFixed(2)}"
+                        transform="rotate(-90 25 25)" />
+                <text x="25" y="25" class="donut-text"
+                      dominant-baseline="central" text-anchor="middle">
+                  ${Math.round(score)}%
+                </text>
+              </svg>
+            </div>
+          </div>
+          ${hasPills ? `
+            <div class="rc-pills-row">
+              ${_pillsHtml(have, 'have')}${_pillsHtml(missing, 'missing')}
+            </div>` : ''}
+          ${recipe.steps_summary ? `
+            <div class="rc-summary-wrap">
+              <p class="rc-summary">${recipe.steps_summary}</p>
+              <button class="rc-toggle" type="button">Show more</button>
+            </div>` : ''}
+          ${recipe.url ? `
+            <div class="rc-footer">
+              <a class="rc-link" href="${recipe.url}" target="_blank" rel="noopener">
+                View Full Recipe →
+              </a>
+            </div>` : ''}
+        `;
+
+        recipeGrid.appendChild(card);
+      });
+
+      resultsTitle.textContent =
+        `${recipes.length} recipe${recipes.length !== 1 ? 's' : ''} found`;
+    }
+
+    // Event delegation: summary toggle + "+N more" expansion
+    recipeGrid.addEventListener('click', e => {
+      if (e.target.classList.contains('rc-toggle')) {
+        const para = e.target.closest('.rc-summary-wrap').querySelector('.rc-summary');
+        const open = para.classList.toggle('expanded');
+        e.target.textContent = open ? 'Show less' : 'Show more';
+        return;
+      }
+      if (e.target.classList.contains('rc-more-btn')) {
+        const btn  = e.target;
+        const data = _pillData.get(btn.dataset.pid);
+        if (data) {
+          data.items.forEach(item => {
+            const pill = document.createElement('span');
+            pill.className = `rc-pill ${data.cls}`;
+            pill.textContent = item;
+            btn.before(pill);
+          });
+          _pillData.delete(btn.dataset.pid);
+          btn.remove();
+        }
+      }
+    });
+
+    // ------------------------------------------------------------------ //
+    // Search                                                                //
+    // ------------------------------------------------------------------ //
+    const STEP_LABELS = {
+      parsing:   'Parsing your ingredients…',
+      searching: 'Searching for recipes…',
+      scoring:   'Scoring and ranking results…',
+      done:      'Done!',
+    };
+
+    async function searchRecipes() {
+      // Commit any text still in the textarea before searching.
+      const remainder = inputEl.value.trim();
+      if (remainder) {
+        commitInput(remainder);
+        inputEl.value = '';
+      }
+
+      if (ingredients.length === 0) {
+        inputEl.focus();
+        return;
+      }
+
+      // Cancel any in-flight request
+      if (activeRequest) activeRequest.abort();
+      activeRequest = new AbortController();
+
+      setSearching(true);
+      clearStatus();
+      hideError();
+      recipeGrid.innerHTML  = '';
+      traceLink.hidden      = true;
+      traceFooter.hidden    = true;
+      resultsSection.classList.remove('visible');
+      showStepper();
+
+      const raw = ingredients.join(', ');
+      let finalRecipes = [];
+
+      try {
+        const response = await fetch(`${API_BASE}/search`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ raw_input: raw, session_id: sessionId, filters: buildFilters() }),
+          signal:  activeRequest.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+
+        const reader  = response.body.getReader();
+        const decoder = new TextDecoder();
+        let   buffer  = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete last line
+
+          let eventType = 'message';
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+              const raw_data = line.slice(5).trim();
+              if (!raw_data || raw_data === ':') continue;
+
+              let parsed;
+              try { parsed = JSON.parse(raw_data); } catch { continue; }
+
+              if (eventType === 'message') {
+                if (parsed.step in STEP_COMPLETE_MAP) {
+                  advanceStepper(STEP_COMPLETE_MAP[parsed.step]);
+                }
+                if (parsed.data && parsed.data.scored_recipes &&
+                    parsed.data.scored_recipes.length > 0) {
+                  finalRecipes = parsed.data.scored_recipes;
+                }
+              } else if (eventType === 'done') {
+                advanceStepper(3); // all four steps complete
+                if (parsed.langsmith_run_url) {
+                  traceLink.href        = parsed.langsmith_run_url;
+                  traceLink.hidden      = false;
+                  traceFooterLink.href  = parsed.langsmith_run_url;
+                  traceFooter.hidden    = false;
+                }
+              } else if (eventType === 'error') {
+                throw new Error(parsed.message || 'Unknown server error');
+              }
+
+              // reset for next event
+              eventType = 'message';
+            }
+          }
+        }
+
+        // Collapse stepper then render results
+        collapseStepper();
+        setTimeout(() => {
+          resultsSection.classList.add('visible');
+          renderCards(finalRecipes);
+        }, 350); // matches collapse transition
+
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        showError(err.message);
+      } finally {
+        setSearching(false);
+        activeRequest = null;
+      }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Event listeners                                                       //
+    // ------------------------------------------------------------------ //
+    searchBtn.addEventListener('click', searchRecipes);
+
+    inputEl.addEventListener('keydown', e => {
+      if (e.key === ',') {
+        const val = inputEl.value.trim();
+        if (val) {
+          commitInput(val);
+          inputEl.value = '';
+        }
+        e.preventDefault();
+      } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        searchRecipes();
+      }
+    });
+
+    inputEl.addEventListener('blur', () => {
+      const val = inputEl.value.trim();
+      if (val) {
+        commitInput(val);
+        inputEl.value = '';
+      }
+    });
+
+    // Cuisine pill toggles
+    document.querySelectorAll('.pill-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.pill-toggle').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        filterCuisine = btn.dataset.cuisine;
+      });
+    });
+
+    // Dietary checkboxes
+    document.querySelectorAll('.dietary-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) filterDietary.add(cb.value);
+        else filterDietary.delete(cb.value);
+      });
+    });
+
+    // Cook time slider
+    const cookTimeSlider  = document.getElementById('cook-time-slider');
+    const cookTimeLabelEl = document.getElementById('cook-time-label');
+    cookTimeSlider.addEventListener('input', () => {
+      filterCookTime = parseInt(cookTimeSlider.value, 10);
+      cookTimeLabelEl.textContent = filterCookTime === 0 ? 'Any' : `Up to ${filterCookTime} min`;
+    });
+
+    // Restore pantry chips from server on page load
+    restorePantry();
+
+    retryBtn.addEventListener('click', searchRecipes);
+
+    clearPantryBtn.addEventListener('click', async () => {
+      // Best-effort server-side clear
+      try {
+        await fetch(`${API_BASE}/pantry/${sessionId}`, { method: 'DELETE' });
+      } catch { /* ignore */ }
+
+      // Clear UI
+      ingredients = [];
+      renderPills();
+
+      // Issue a new session ID so next search starts fresh
+      sessionId = crypto.randomUUID();
+      localStorage.setItem(SESSION_KEY, sessionId);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      if (activeRequest) {
+        activeRequest.abort();
+        activeRequest = null;
+      }
+      ingredients = [];
+      inputEl.value = '';
+      renderPills();
+      setSearching(false);
+      clearStatus();
+      hideError();
+      stepperEl.classList.remove('collapsed');
+      stepperEl.hidden   = true;
+      recipeGrid.innerHTML = '';
+      traceLink.hidden   = true;
+      traceFooter.hidden = true;
+      resultsSection.classList.remove('visible');
+    });
+  </script>
+</body>
+</html>

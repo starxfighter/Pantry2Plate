@@ -1,10 +1,8 @@
-"""LangGraph state definitions and graph builder for the Pantry-to-Plate pipeline.
+"""LangGraph state definitions, agent nodes, and graph builder for Pantry-to-Plate.
 
 Defines the shared AgentState TypedDict, the RecipeCandidate and ScoredRecipe
-data contracts, six async node stubs, and build_graph() which assembles the
-StateGraph up to (but not including) compilation.  Full node implementations
-are added in Phase 4; conditional edges and MemorySaver compilation are wired
-in Phase 5.
+data contracts, six async node functions backed by module-level agent singletons,
+and build_graph() / compile_graph() which assemble and compile the StateGraph.
 """
 
 from __future__ import annotations
@@ -135,38 +133,58 @@ class AgentState(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Node stubs
+# Agent singletons
+# ---------------------------------------------------------------------------
+
+# Imported here (after TypedDicts are defined) to avoid circular imports.
+from backend.agents.parser_agent import ParserAgent  # noqa: E402
+from backend.agents.search_agent import SearchAgent  # noqa: E402
+from backend.agents.scorer_agent import ScorerAgent  # noqa: E402
+
+_parser = ParserAgent()
+_search = SearchAgent()
+_scorer = ScorerAgent()
+
+
+# ---------------------------------------------------------------------------
+# Node functions
 # ---------------------------------------------------------------------------
 
 
 async def parse_node(state: AgentState) -> AgentState:
-    # TODO: instantiate ParserAgent and call it; write parsed_ingredients / parse_error
-    pass  # type: ignore[return-value]
+    """Set current_step and delegate to the Parser Agent."""
+    state["current_step"] = "parsing"
+    return await _parser.run(state)
 
 
 async def search_node(state: AgentState) -> AgentState:
-    # TODO: instantiate SearchAgent and call it; write search_results / search_error
-    pass  # type: ignore[return-value]
+    """Set current_step and delegate to the Search Agent."""
+    state["current_step"] = "searching"
+    return await _search.run(state)
 
 
 async def score_node(state: AgentState) -> AgentState:
-    # TODO: instantiate ScorerAgent and call it; write scored_recipes / langsmith_run_url
-    pass  # type: ignore[return-value]
+    """Set current_step and delegate to the Scorer Agent."""
+    state["current_step"] = "scoring"
+    return await _scorer.run(state)
 
 
 async def output_node(state: AgentState) -> AgentState:
-    # TODO: set current_step = "done"; compute and log total latency
-    pass  # type: ignore[return-value]
+    """Mark the pipeline as successfully completed."""
+    state["current_step"] = "done"
+    return state
 
 
 async def error_node(state: AgentState) -> AgentState:
-    # TODO: set current_step = "error"; emit structured error log entry
-    pass  # type: ignore[return-value]
+    """Mark the pipeline as failed (parse or unrecoverable error)."""
+    state["current_step"] = "error"
+    return state
 
 
 async def empty_node(state: AgentState) -> AgentState:
-    # TODO: set current_step = "empty"; signal to API layer that no recipes matched
-    pass  # type: ignore[return-value]
+    """Mark the pipeline as completed with no matching recipes found."""
+    state["current_step"] = "empty"
+    return state
 
 
 # ---------------------------------------------------------------------------

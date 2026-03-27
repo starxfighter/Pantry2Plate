@@ -23,64 +23,70 @@ Add newly discovered sub-tasks inline under the relevant phase.
 - [x] Rename `backend/utils/logging.py` → `log_config.py` (stdlib name conflict)
 - [x] Write `backend/utils/smoke_test.py` — verify all 4 API connections
 - [x] Verify LangSmith trace appears in `pantry-to-plate` project
-- [ ] Write `backend/utils/log_config.py` (structured logging setup)
+- [x] Write `backend/utils/log_config.py` (structured logging setup)
 - [ ] Write `backend/utils/session.py` (session ID generation + storage helpers)
 
 ---
 
-## Phase 3 — MCP Servers
+## Phase 3 — MCP Servers ✅
 
-- [ ] `backend/mcp_servers/pantry_server.py` — in-memory ingredient store per session
-- [ ] `backend/mcp_servers/tavily_server.py` — Tavily web search wrapper
-- [ ] `backend/mcp_servers/spoonacular_server.py` — Spoonacular API wrapper
-- [ ] `backend/mcp_servers/langsmith_server.py` — trace logging helpers
+- [x] `backend/mcp_servers/pantry_server.py` — in-memory ingredient store per session
+- [x] `backend/mcp_servers/tavily_server.py` — Tavily web search wrapper
+- [x] `backend/mcp_servers/spoonacular_server.py` — Spoonacular API wrapper
+- [x] `backend/mcp_servers/langsmith_server.py` — trace logging helpers
 - [ ] Unit tests for each MCP server in `tests/unit/`
 
 ---
 
-## Phase 4 — Agents
+## Phase 4 — Agents ✅
 
-- [ ] `backend/agents/base.py` — `BaseAgent` ABC (model client, prompt loading)
-- [ ] `backend/prompts/parser_system.txt` — Parser Agent system prompt
-- [ ] `backend/agents/parser_agent.py` — ingredient extraction
-- [ ] `backend/prompts/search_system.txt` — Search Agent system prompt
-- [ ] `backend/agents/search_agent.py` — parallel Tavily + Spoonacular search
-- [ ] `backend/agents/scorer_agent.py` — fuzzy match scoring + deduplication
-- [ ] `backend/tools/ingredient_matcher.py` — fuzzy matching utility
+- [x] `backend/agents/base.py` — `BaseAgent` ABC (model client, prompt loading)
+- [x] `backend/prompts/parser_system.txt` — Parser Agent system prompt
+- [x] `backend/agents/parser_agent.py` — ingredient extraction
+- [x] `backend/prompts/search_system.txt` — Search Agent system prompt
+- [x] `backend/agents/search_agent.py` — Tavily + Spoonacular search
+- [x] `backend/agents/scorer_agent.py` — fuzzy match scoring + ranking
+- [x] `backend/tools/ingredient_matcher.py` — fuzzy matching utility
 - [ ] Unit tests for each agent in `tests/unit/`
 
 ---
 
-## Phase 5 — LangGraph Orchestration
+## Phase 5 — LangGraph Orchestration ✅
 
-- [ ] `backend/graph.py` — `StateGraph` wiring Parser → Search → Scorer
-- [ ] Define `GraphState` TypedDict
-- [ ] Wire `MemorySaver` checkpointer
+- [x] `backend/graph.py` — `StateGraph` wiring Parser → Search → Scorer
+- [x] Define `AgentState` TypedDict + `RecipeCandidate` + `ScoredRecipe`
+- [x] Wire `MemorySaver` checkpointer
+- [x] End-to-end smoke test (`backend/utils/graph_test.py`) — all assertions pass
 - [ ] Integration test: full graph run with mocked MCP tools
 
 ---
 
-## Phase 6 — FastAPI Gateway
+## Phase 6 — FastAPI Gateway ✅
 
-- [ ] `backend/main.py` — FastAPI app, lifespan (MCP startup/shutdown), CORS
-- [ ] `POST /search` endpoint — accepts ingredient text, streams SSE
-- [ ] `GET /health` endpoint
-- [ ] SSE streaming of partial results and final ranked list
+- [x] `backend/main.py` — FastAPI app, lifespan (MCP startup/shutdown), CORS
+- [x] `POST /search` endpoint — accepts ingredient text, streams SSE
+- [x] `GET /health` endpoint
+- [x] SSE streaming of partial results and final ranked list
 - [ ] Integration tests for API endpoints
 
 ---
 
-## Phase 7 — Frontend
+## Phase 7 — Frontend ✅
 
-- [ ] `frontend/index.html` — ingredient input form
-- [ ] SSE consumption and live result rendering
-- [ ] "View agent trace" link using LangSmith run URL
-- [ ] Error state and loading indicator
+- [x] `frontend/index.html` — ingredient input form
+- [x] SSE consumption and live result rendering
+- [x] "View agent trace" link using LangSmith run URL
+- [x] Error state and loading indicator
+- [x] Ingredient pill parsing (comma/blur, X to remove, count label)
+- [x] Session ID from localStorage (`crypto.randomUUID()`)
+- [x] Filter bar: cuisine toggles, dietary checkboxes, cook time slider
+- [x] 4-step horizontal stepper with CSS transitions (active pulse, complete fill)
 
 ---
 
 ## Phase 8 — Testing & Polish
 
+- [ ] **Re-test full pipeline** — Spoonacular free-tier quota was exhausted during 2026-03-27 debugging session; retest next day to confirm 10 recipes returned and LangSmith trace link appears
 - [ ] Fill `tests/integration/` with end-to-end graph + API tests
 - [ ] Add `pytest.ini` or `pyproject.toml` with asyncio mode config
 - [ ] Reach ≥ 80 % unit test coverage on `backend/`
@@ -96,3 +102,8 @@ Add newly discovered sub-tasks inline under the relevant phase.
 - [ ] Rate-limit handling for Spoonacular free tier
 - [ ] Ingredient quantity parsing (e.g. "2 cups of flour")
 - [ ] Persistent pantry across sessions (replace in-memory store)
+
+## UI Polish
+
+- [ ] **Spice/herb/staple chips should be yellow** — ingredients identified as common spices, herbs, or kitchen staples (e.g. salt, pepper, olive oil, garlic) should render as yellow chips, not red "missing" chips, since users almost always have them
+- [ ] **Scorer should ignore spices/herbs/staples** — the ingredient match score should not count common spices, herbs, and kitchen staples as "missing". They inflate the missing count and depress scores unfairly. Define a staple list (salt, pepper, olive oil, butter, garlic, onion, flour, sugar, water, vinegar, etc.) and exclude them from the scoring denominator and missing list.

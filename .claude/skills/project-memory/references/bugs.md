@@ -13,6 +13,131 @@ _No open bugs._
 
 ---
 
+### BUG-006 — LangSmith share call fails 404 due to eventual consistency
+
+- **Date found:** 2026-03-27
+- **Status:** Resolved
+- **Resolved date:** 2026-03-27
+- **Severity:** High
+- **Component:** mcp_servers
+
+**Description**
+`get_run_url` called `PUT /runs/{run_id}/share` immediately after `log_search_run` posted the run.
+LangSmith's `POST /runs` returns **202 Accepted** (async) — the run is not yet indexed, so the share
+call returned 404 and was silently swallowed. The frontend received `langsmith_run_url: null` and
+never displayed the trace link.
+
+**Root cause**
+`POST /runs` is fire-and-forget; the run is indexed asynchronously. Calling `PUT /share`
+within milliseconds of the create consistently returns 404.
+
+**Fix**
+Consolidated the share call into `log_search_run`: after `POST /runs`, retry
+`PUT /runs/{id}/share` up to 3 times with 2-second pauses. On 200, return the
+`share_token` directly. `get_run_url` simplified to just construct the URL string
+(no HTTP call).
+
+---
+
+### BUG-005 — LangSmith trace URL showed "no run found with share token"
+
+- **Date found:** 2026-03-27
+- **Status:** Resolved
+- **Resolved date:** 2026-03-27
+- **Severity:** Medium
+- **Component:** mcp_servers
+
+**Description**
+The LangSmith "View agent trace" link opened successfully but showed
+"No run found with this share token" in the LangSmith UI.
+
+**Root cause**
+`get_run_url` was using the **run ID** directly as the share token in the URL
+`https://smith.langchain.com/public/{run_id}/r`. LangSmith requires a separate
+share token obtained from `PUT /runs/{run_id}/share`.
+
+**Fix**
+Added `PUT /runs/{run_id}/share` call in `get_run_url` to obtain a proper share
+token. Later consolidated into `log_search_run` (see BUG-006).
+
+---
+
+### BUG-004 — TextContent wrapping breaks Spoonacular and Tavily tool results
+
+- **Date found:** 2026-03-27
+- **Status:** Resolved
+- **Resolved date:** 2026-03-27
+- **Severity:** High
+- **Component:** agents
+
+**Description**
+`langchain-mcp-adapters` wraps every MCP tool result — including `list[dict]` returns —
+as a list of TextContent dicts: `[{"type": "text", "text": "<json-string>"}]`.
+In `search_agent.py`, `for c in candidates: c.get("id")` returned None for TextContent
+dicts, so **all Spoonacular candidates were silently skipped** (0 Spoonacular recipes).
+Tavily results were also serialized incorrectly to the LLM as the TextContent wrapper,
+degrading recipe extraction quality.
+
+**Root cause**
+Same `langchain-mcp-adapters` serialization issue as BUG-003, but affecting `list[dict]`
+return types in search_agent (not just `str` in scorer_agent).
+
+**Fix**
+Added `_unwrap_tool_list(raw)` helper in `search_agent.py` that normalises any
+TextContent-wrapped, string, or plain-list result into `list[dict]`. Applied to
+all four tool call sites in `_search_tavily` and `_search_spoonacular`.
+
+---
+
+### BUG-003 — LangSmith MCP tool returns content object list, not plain string
+
+- **Date found:** 2026-03-26
+- **Status:** Resolved
+- **Resolved date:** 2026-03-26
+- **Severity:** High
+- **Component:** mcp_servers, agents
+
+**Description**
+`langchain-mcp-adapters` 0.2.2 returns tool results as `[{'type': 'text', 'text': '...'}]`
+(MCP TextContent list) instead of a plain `str`, even when the tool return type is `str`.
+Passing this list to `get_run_url` as `run_id` failed Pydantic validation, raising a
+`ToolException` that propagated as an ExceptionGroup.
+
+**Root cause**
+`langchain-mcp-adapters` does not automatically unwrap single-text MCP content responses
+to the declared Python return type for all tool shapes.
+
+**Fix**
+Added `_extract_text(value)` helper in `scorer_agent.py` that handles both `str` and
+`list[dict]` (TextContent) return shapes.
+
+---
+
+### BUG-002 — langsmith.Client background threads block FastMCP stdio response
+
+- **Date found:** 2026-03-26
+- **Status:** Resolved
+- **Resolved date:** 2026-03-26
+- **Severity:** High
+- **Component:** mcp_servers
+
+**Description**
+Using `langsmith.Client().create_run()` inside a synchronous FastMCP tool caused the
+subprocess to not flush its stdio response to the parent process in a timely manner.
+The parent's `ainvoke` timed out waiting for the response.
+
+**Root cause**
+`langsmith.Client` starts background daemon threads for batch processing.  These threads
+interact with the subprocess process state in a way that delays stdout flushing inside
+the FastMCP stdio transport.
+
+**Fix**
+Replaced `langsmith.Client` with a direct `httpx.Client` POST to the LangSmith REST API
+(`/runs` endpoint) in `langsmith_server.py`.  No background threads, clean synchronous
+HTTP call.
+
+---
+
 ## Resolved
 
 ### BUG-001 — fastmcp dev inspector fails to connect on default ports

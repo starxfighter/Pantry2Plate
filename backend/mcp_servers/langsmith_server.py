@@ -3,7 +3,7 @@
 Exposes two tools:
 
 * ``log_search_run`` — records a completed pipeline run as a LangSmith trace.
-* ``get_run_url`` — constructs a public shareable URL for a given run ID.
+* ``get_run_url`` — constructs a public shareable URL for a given share token.
 
 All exceptions are caught, logged as structured JSON to stderr, and converted
 to safe return values (empty string) so observability failures never block
@@ -26,13 +26,16 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 import uuid
+from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
-from langsmith import Client
 from mcp.server.fastmcp import FastMCP
 
-load_dotenv()
+# Resolve .env relative to this file so the subprocess finds it regardless of cwd.
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 logging.basicConfig(
     format="%(message)s",
@@ -52,22 +55,6 @@ mcp = FastMCP("langsmith")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _get_client() -> Client:
-    """Instantiate an authenticated LangSmith Client from the environment.
-
-    Returns:
-        A configured ``langsmith.Client`` instance.
-
-    Raises:
-        ValueError: If ``LANGSMITH_API_KEY`` is not set.
-    """
-    api_key = os.getenv("LANGSMITH_API_KEY")
-    if not api_key:
-        raise ValueError("LANGSMITH_API_KEY environment variable is not set")
-    endpoint = os.getenv("LANGSMITH_ENDPOINT", _DEFAULT_ENDPOINT)
-    return Client(api_url=endpoint, api_key=api_key)
 
 
 def _log_error(tool: str, error: Exception, **context: object) -> None:
@@ -93,35 +80,74 @@ def log_search_run(
 ) -> str:
     """Record a completed pipeline search run as a LangSmith trace.
 
-    Creates a run of type ``"chain"`` under the project configured via
-    ``LANGSMITH_PROJECT``.  Session ID and latency are attached as extra
-    metadata for filtering and analysis in the LangSmith UI.
+    Posts directly to the LangSmith REST API using a synchronous
+    ``httpx.Client`` (no background threads, no async complexity).
+    After creating the run, immediately calls ``PUT /runs/{id}/share``
+    to obtain a share token, which is returned instead of the run ID.
+    This avoids a second MCP round-trip in ``get_run_url``.
 
     Args:
         session_id: Unique identifier for the current user session.
-        inputs: Pipeline inputs to record, e.g.
-            ``{"raw_input": "chicken rice tomatoes", "filters": {}}``.
-        outputs: Pipeline outputs to record, e.g.
-            ``{"scored_recipes": [...], "total_results": 8}``.
+        inputs: Pipeline inputs to record.
+        outputs: Pipeline outputs to record.
         latency_ms: Total pipeline wall-clock time in milliseconds.
 
     Returns:
-        The LangSmith run ID as a string (UUID), or an empty string on failure.
+        The LangSmith share token (UUID string), or an empty string on failure.
     """
     try:
-        client = _get_client()
+        api_key = os.getenv("LANGSMITH_API_KEY")
+        if not api_key:
+            raise ValueError("LANGSMITH_API_KEY environment variable is not set")
+
+        endpoint = os.getenv("LANGSMITH_ENDPOINT", _DEFAULT_ENDPOINT).rstrip("/")
         project = os.getenv("LANGSMITH_PROJECT", "pantry-to-plate")
         run_id = str(uuid.uuid4())
-        client.create_run(
-            id=run_id,
-            name="pantry-search",
-            run_type="chain",
-            inputs=inputs,
-            outputs=outputs,
-            extra={"session_id": session_id, "latency_ms": latency_ms},
-            project_name=project,
-        )
-        return run_id
+
+        payload = {
+            "id": run_id,
+            "name": "pantry-search",
+            "run_type": "chain",
+            "inputs": inputs,
+            "outputs": outputs,
+            "extra": {"session_id": session_id, "latency_ms": latency_ms},
+            "session_name": project,
+        }
+
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(
+                f"{endpoint}/runs",
+                json=payload,
+                headers={
+                    "x-api-key": api_key,
+                    "content-type": "application/json",
+                },
+            )
+            response.raise_for_status()
+
+            # Share the run to get a public share token.
+            # POST /runs returns 202 Accepted (async) so the run may not be
+            # indexed immediately. Retry the share call up to 3 times with a
+            # 2-second pause between attempts to handle eventual consistency.
+            share_token: str = ""
+            for attempt in range(3):
+                if attempt > 0:
+                    time.sleep(2)
+                share_response = client.put(
+                    f"{endpoint}/runs/{run_id}/share",
+                    headers={
+                        "x-api-key": api_key,
+                        "content-type": "application/json",
+                    },
+                )
+                if share_response.status_code == 200:
+                    share_token = share_response.json().get("share_token", "")
+                    break
+                # 404 means not indexed yet — retry; any other error, stop.
+                if share_response.status_code != 404:
+                    share_response.raise_for_status()
+
+        return share_token
     except Exception as exc:
         _log_error(
             "log_search_run",
@@ -133,31 +159,27 @@ def log_search_run(
 
 
 @mcp.tool()
-def get_run_url(run_id: str) -> str:
-    """Return a shareable URL for viewing a LangSmith run trace.
+def get_run_url(share_token: str) -> str:
+    """Construct a shareable URL for viewing a LangSmith run trace.
 
-    Uses the custom ``LANGSMITH_ENDPOINT`` base when set (self-hosted
-    instances), otherwise falls back to the public ``smith.langchain.com``
-    URL format.
+    ``log_search_run`` now returns the share token directly (obtained via
+    ``PUT /runs/{id}/share``), so this tool only needs to build the URL
+    string — no HTTP call required.
 
     Args:
-        run_id: LangSmith run ID string (UUID) as returned by
+        share_token: LangSmith share token (UUID) as returned by
             ``log_search_run``.
 
     Returns:
-        A fully-qualified URL string, or an empty string on failure.
+        A fully-qualified public URL string, or an empty string if the
+        token is empty.
     """
-    try:
-        if not run_id:
-            return ""
-        endpoint = os.getenv("LANGSMITH_ENDPOINT", "")
-        if endpoint and endpoint != _DEFAULT_ENDPOINT:
-            base = endpoint.rstrip("/")
-            return f"{base}/public/{run_id}/r"
-        return f"{_PUBLIC_UI_BASE}/{run_id}/r"
-    except Exception as exc:
-        _log_error("get_run_url", exc, run_id=run_id)
+    if not share_token:
         return ""
+    endpoint = os.getenv("LANGSMITH_ENDPOINT", _DEFAULT_ENDPOINT).rstrip("/")
+    if endpoint != _DEFAULT_ENDPOINT:
+        return f"{endpoint}/public/{share_token}/r"
+    return f"{_PUBLIC_UI_BASE}/{share_token}/r"
 
 
 # ---------------------------------------------------------------------------
