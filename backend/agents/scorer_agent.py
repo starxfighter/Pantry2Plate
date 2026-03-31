@@ -155,6 +155,7 @@ class ScorerAgent(BaseAgent):
                     "match_score": match["score"],
                     "ingredients_have": match["have"],
                     "ingredients_missing": match["missing"],
+                    "ingredients_staple": match["staples"],
                 }
                 scored.append(scored_recipe)
 
@@ -221,10 +222,14 @@ class ScorerAgent(BaseAgent):
             inputs = {
                 "raw_input": state.get("raw_input", ""),
                 "parsed_ingredients": state.get("parsed_ingredients") or [],
+                "tavily_candidates": state.get("tavily_recipe_count", 0),
+                "spoonacular_candidates": state.get("spoonacular_recipe_count", 0),
             }
             outputs = {
                 "recipe_count": len(scored),
                 "top_score": top_score,
+                "tavily_recipes": state.get("tavily_recipe_count", 0),
+                "spoonacular_recipes": state.get("spoonacular_recipe_count", 0),
             }
 
             # Yield to the event loop before opening a new subprocess session.

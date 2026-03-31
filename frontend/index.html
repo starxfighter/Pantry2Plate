@@ -66,6 +66,7 @@
     header {
       text-align: center;
       margin-bottom: 2.5rem;
+      position: relative;
     }
 
     header h1 {
@@ -79,6 +80,72 @@
       color: var(--sage);
       font-size: 1.05rem;
     }
+
+    /* ------------------------------------------------------------------ */
+    /* Server status badge                                                   */
+    /* ------------------------------------------------------------------ */
+    #server-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.75rem;
+      font-size: 0.78rem;
+      color: #999;
+    }
+
+    #server-status .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+
+    #server-status.ok   .dot { background: #4caf50; }
+    #server-status.ok        { color: var(--sage); }
+    #server-status.warn .dot { background: #ff9800; }
+    #server-status.warn      { color: #b36a00; }
+    #server-status.err  .dot { background: #c0392b; }
+    #server-status.err       { color: #c0392b; }
+
+    /* ------------------------------------------------------------------ */
+    /* Server warning banner                                                 */
+    /* ------------------------------------------------------------------ */
+    #server-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 10px;
+      padding: 0.85rem 1.1rem;
+      margin-bottom: 1.5rem;
+      font-size: 0.88rem;
+      color: #5d4037;
+      line-height: 1.5;
+    }
+
+    #server-banner code {
+      background: #f5f0e8;
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+      font-size: 0.82rem;
+    }
+
+    #server-banner .banner-dismiss {
+      margin-left: auto;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #999;
+      font-size: 1.1rem;
+      line-height: 1;
+      flex-shrink: 0;
+      padding: 0;
+    }
+
+    #server-banner .banner-dismiss:hover { color: var(--charcoal); }
 
     /* ------------------------------------------------------------------ */
     /* Search form                                                           */
@@ -366,6 +433,7 @@
 
     .rc-pill.have    { background: var(--mist);  color: var(--sage); }
     .rc-pill.missing { background: #fde8e8;       color: #c0392b;     }
+    .rc-pill.staple  { background: #fef9e7;       color: #9a7d0a;     }
 
     .rc-more-btn {
       background: none;
@@ -869,7 +937,16 @@
     <header>
       <h1>Pantry to Plate</h1>
       <p class="tagline">Tell us what's in your fridge — we'll find what to cook.</p>
+      <div id="server-status" aria-live="polite">
+        <span class="dot"></span><span id="server-status-text">Checking server…</span>
+      </div>
     </header>
+
+    <!-- Server warning banner (shown when health check fails) -->
+    <div id="server-banner" hidden>
+      <span id="server-banner-msg"></span>
+      <button class="banner-dismiss" type="button" aria-label="Dismiss">✕</button>
+    </div>
 
     <!-- Search form -->
     <section class="search-card">
@@ -1224,7 +1301,8 @@
 
         const have    = recipe.ingredients_have    || [];
         const missing = recipe.ingredients_missing || [];
-        const hasPills = have.length > 0 || missing.length > 0;
+        const staples = recipe.ingredients_staple  || [];
+        const hasPills = have.length > 0 || missing.length > 0 || staples.length > 0;
 
         const metaParts = [
           recipe.cuisine,
@@ -1257,7 +1335,7 @@
           </div>
           ${hasPills ? `
             <div class="rc-pills-row">
-              ${_pillsHtml(have, 'have')}${_pillsHtml(missing, 'missing')}
+              ${_pillsHtml(have, 'have')}${_pillsHtml(missing, 'missing')}${_pillsHtml(staples, 'staple')}
             </div>` : ''}
           ${recipe.steps_summary ? `
             <div class="rc-summary-wrap">
@@ -1356,7 +1434,10 @@
 
         const reader  = response.body.getReader();
         const decoder = new TextDecoder();
-        let   buffer  = '';
+        let   buffer    = '';
+        // eventType persists across TCP chunks so split event:/data: lines work
+        // correctly. Reset to 'message' only on blank lines (event boundaries).
+        let   eventType = 'message';
 
         while (true) {
           const { done, value } = await reader.read();
@@ -1364,11 +1445,13 @@
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
-          buffer = lines.pop(); // keep incomplete last line
+          buffer = lines.pop(); // keep the incomplete trailing line
 
-          let eventType = 'message';
           for (const line of lines) {
-            if (line.startsWith('event:')) {
+            if (line === '') {
+              // Blank line = SSE event boundary; reset type for the next event.
+              eventType = 'message';
+            } else if (line.startsWith('event:')) {
               eventType = line.slice(6).trim();
             } else if (line.startsWith('data:')) {
               const raw_data = line.slice(5).trim();
@@ -1387,6 +1470,10 @@
                 }
               } else if (eventType === 'done') {
                 advanceStepper(3); // all four steps complete
+                // Use recipes from the checkpoint (authoritative final list).
+                if (parsed.scored_recipes && parsed.scored_recipes.length > 0) {
+                  finalRecipes = parsed.scored_recipes;
+                }
                 if (parsed.langsmith_run_url) {
                   traceLink.href        = parsed.langsmith_run_url;
                   traceLink.hidden      = false;
@@ -1396,9 +1483,6 @@
               } else if (eventType === 'error') {
                 throw new Error(parsed.message || 'Unknown server error');
               }
-
-              // reset for next event
-              eventType = 'message';
             }
           }
         }
@@ -1412,6 +1496,9 @@
 
       } catch (err) {
         if (err.name === 'AbortError') return;
+        // If it looks like a network error, re-run health check so the
+        // banner explains the problem rather than leaving it as "Server ready".
+        if (err instanceof TypeError) checkServerHealth();
         showError(err.message);
       } finally {
         setSearching(false);
@@ -1470,8 +1557,50 @@
       cookTimeLabelEl.textContent = filterCookTime === 0 ? 'Any' : `Up to ${filterCookTime} min`;
     });
 
+    // ------------------------------------------------------------------ //
+    // Server health check                                                  //
+    // ------------------------------------------------------------------ //
+    const serverStatusEl   = document.getElementById('server-status');
+    const serverStatusText = document.getElementById('server-status-text');
+    const serverBanner     = document.getElementById('server-banner');
+    const serverBannerMsg  = document.getElementById('server-banner-msg');
+
+    serverBanner.querySelector('.banner-dismiss')
+      .addEventListener('click', () => { serverBanner.hidden = true; });
+
+    async function checkServerHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (data.mcp_servers_running) {
+          serverStatusEl.className = 'ok';
+          serverStatusText.textContent = 'Server ready';
+          serverBanner.hidden = true;
+        } else {
+          serverStatusEl.className = 'warn';
+          serverStatusText.textContent = 'Backend services degraded';
+          serverBannerMsg.innerHTML =
+            '⚠️ The server is running but some backend services are offline. ' +
+            'Recipes may not load correctly. ' +
+            'Restart the server to restore full functionality: ' +
+            '<code>uvicorn backend.main:app --reload --port 8000</code>';
+          serverBanner.hidden = false;
+        }
+      } catch {
+        serverStatusEl.className = 'err';
+        serverStatusText.textContent = 'Server offline';
+        serverBannerMsg.innerHTML =
+          '🔴 Cannot reach the server. Make sure uvicorn is running: ' +
+          '<code>uvicorn backend.main:app --reload --port 8000</code>';
+        serverBanner.hidden = false;
+      }
+    }
+
     // Restore pantry chips from server on page load
     restorePantry();
+    checkServerHealth();
 
     retryBtn.addEventListener('click', searchRecipes);
 

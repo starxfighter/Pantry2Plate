@@ -5,18 +5,22 @@
 ## ▶ RESUME HERE
 
 **Last session ended:** 2026-03-31
-**Stopped at:** Phase 8 testing complete. All tests passing, 87% coverage, 0 ruff errors.
+**Stopped at:** Phase 8 testing complete + test quality review done. 179 tests passing, 87% coverage, 0 ruff errors.
 
 **Next action:**
 - **Re-test full pipeline** with live server (Spoonacular quota should have reset)
 - Write `docs/architecture.md` (last unchecked Phase 8 item)
-- Optional: commit + PR to main
+- Commit updated test files + PR to main
 
 **Known state:**
-- 176 tests: 166 unit + 10 integration, all passing
-- Coverage: 87% on `backend/` (with `.coveragerc` omitting `graph_test.py` + `smoke_test.py`)
+- 179 tests: 169 unit + 10 integration, all passing
+- `test_parser_agent.py`: added `test_empty_input_handled`, `test_pantry_save_called`; all async tests now have `@pytest.mark.asyncio`
+- `test_search_agent.py`: added `test_concurrent_fetch` (verifies both sources called, notes sequential ADR-004 design), `test_deduplication`, `test_filter_applied`, `test_one_source_fails` (3 Spoonacular results), `test_both_sources_fail`; all run() tests have `@pytest.mark.asyncio`
+- `_make_mcp_patch()` in `test_parser_agent.py` now returns the `save_pantry` mock tool for assertion
+- Coverage: 87% on `backend/` (`.coveragerc` omits `graph_test.py` + `smoke_test.py`)
 - Ruff: 0 errors
-- Debug logging retained in `main.py` (sse_chunk, done_checkpoint) and `search_agent.py` (search_results) — kept as observability
+- IMPORTANT: `_search_tavily` and `_search_spoonacular` run **sequentially** (not via asyncio.gather) — ADR-004, Windows ProactorEventLoop fix
+- Debug logging retained in `main.py` and `search_agent.py` — kept as observability
 - `TAVILY_MAX_RESULTS=10`, `TOP_RECIPE_COUNT=10` in `.env`
 
 > Note: `D:\GenAI Workspace\Work Files\` is retired — do not read those files.

@@ -57,7 +57,10 @@ class ScoredRecipe(TypedDict):
         dietary_tags: Zero or more dietary tags.
         match_score: Percentage (0.0–100.0) of recipe ingredients the user has.
         ingredients_have: Subset of ingredient_list present in the user's pantry.
-        ingredients_missing: Subset of ingredient_list absent from the user's pantry.
+        ingredients_missing: Subset of ingredient_list absent from the user's pantry
+            (excludes staples).
+        ingredients_staple: Subset of ingredient_list that are common kitchen staples
+            absent from the pantry; excluded from scoring.
     """
 
     name: str
@@ -71,6 +74,7 @@ class ScoredRecipe(TypedDict):
     match_score: float
     ingredients_have: list[str]
     ingredients_missing: list[str]
+    ingredients_staple: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +126,8 @@ class AgentState(TypedDict):
     # --- Search Agent output ---
     search_results: list[dict]
     search_error: Optional[str]
+    tavily_recipe_count: int
+    spoonacular_recipe_count: int
 
     # --- Scorer Agent output ---
     scored_recipes: list[dict]

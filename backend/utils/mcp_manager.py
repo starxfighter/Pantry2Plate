@@ -15,14 +15,22 @@ Environment variables:
         before checking that they are still alive.  Defaults to ``5``.
     MCP_AUTO_RESTART: Set to ``"true"`` to automatically restart any server
         process that exits unexpectedly.  Defaults to ``"false"``.
+
+Implementation note:
+    Uses ``subprocess.Popen`` wrapped in ``loop.run_in_executor`` rather than
+    ``asyncio.create_subprocess_exec``.  The asyncio variant requires a
+    ``ProactorEventLoop`` on Windows, which is not guaranteed when uvicorn
+    manages the event loop.  The executor approach works with any loop type.
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -65,14 +73,14 @@ class MCPServerManager:
     """Manages the lifecycle of all FastMCP stdio server subprocesses.
 
     Attributes:
-        _processes: Mapping of server name to live ``asyncio.subprocess.Process``.
+        _processes: Mapping of server name to live ``subprocess.Popen`` handle.
         _restart_task: Background asyncio Task running the health-monitor loop,
             or ``None`` when auto-restart is disabled or ``stop_all`` has been
             called.
     """
 
     def __init__(self) -> None:
-        self._processes: dict[str, asyncio.subprocess.Process] = {}
+        self._processes: dict[str, subprocess.Popen] = {}
         self._restart_task: asyncio.Task | None = None
         self._project_root: Path = Path(__file__).resolve().parents[2]
 
@@ -95,18 +103,7 @@ class MCPServerManager:
         timeout = float(os.getenv("MCP_SERVER_STARTUP_TIMEOUT", "5"))
 
         for name, rel_path in _SERVERS.items():
-            script = str(self._project_root / rel_path)
-            _log("info", "mcp_server_starting", server=name, script=script)
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                script,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(self._project_root),
-            )
-            self._processes[name] = process
-            _log("info", "mcp_server_launched", server=name, pid=process.pid)
+            await self._launch_one(name)
 
         # Allow servers time to initialise before checking health.
         await asyncio.sleep(timeout)
@@ -147,12 +144,14 @@ class MCPServerManager:
     def is_running(self) -> bool:
         """Return ``True`` if all server processes are currently alive.
 
-        A process is considered alive when ``process.returncode`` is ``None``
-        (i.e. it has not yet exited).
+        Calls ``poll()`` on each process to refresh its return code before
+        checking — unlike ``asyncio.subprocess.Process.returncode``,
+        ``subprocess.Popen.returncode`` is only updated after ``poll()`` or
+        ``wait()``.
         """
         if not self._processes:
             return False
-        return all(p.returncode is None for p in self._processes.values())
+        return all(p.poll() is None for p in self._processes.values())
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -161,14 +160,12 @@ class MCPServerManager:
     def _assert_all_running(self) -> None:
         """Raise ``RuntimeError`` if any process has already exited.
 
-        Args: none (reads ``self._processes``).
-
         Raises:
             RuntimeError: With the name and return code of the first failed
                 server found.
         """
         for name, process in self._processes.items():
-            if process.returncode is not None:
+            if process.poll() is not None:
                 raise RuntimeError(
                     f"MCP server '{name}' exited unexpectedly during startup "
                     f"(return code {process.returncode}). "
@@ -178,43 +175,55 @@ class MCPServerManager:
     async def _launch_one(self, name: str) -> None:
         """(Re-)launch a single MCP server subprocess.
 
+        Uses ``loop.run_in_executor`` to start the process without blocking
+        the event loop.  Works with any asyncio loop type on any platform.
+
         Args:
             name: Key from ``_SERVERS`` identifying which server to start.
         """
         rel_path = _SERVERS[name]
         script = str(self._project_root / rel_path)
         _log("info", "mcp_server_starting", server=name, script=script)
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
-            script,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(self._project_root),
+
+        loop = asyncio.get_event_loop()
+        process: subprocess.Popen = await loop.run_in_executor(
+            None,
+            functools.partial(
+                subprocess.Popen,
+                [sys.executable, script],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(self._project_root),
+            ),
         )
         self._processes[name] = process
         _log("info", "mcp_server_launched", server=name, pid=process.pid)
 
-    async def _terminate(self, name: str, process: asyncio.subprocess.Process) -> None:
+    async def _terminate(self, name: str, process: subprocess.Popen) -> None:
         """Terminate a single subprocess, escalating to SIGKILL if needed.
 
         Args:
             name: Human-readable server name for logging.
             process: The subprocess handle to terminate.
         """
-        if process.returncode is not None:
+        if process.poll() is not None:
             return  # already exited
 
         _log("info", "mcp_server_terminating", server=name, pid=process.pid)
+        loop = asyncio.get_event_loop()
         try:
             process.terminate()
-            await asyncio.wait_for(process.wait(), timeout=_SIGKILL_WAIT)
+            await asyncio.wait_for(
+                loop.run_in_executor(None, process.wait),
+                timeout=_SIGKILL_WAIT,
+            )
             _log("info", "mcp_server_stopped", server=name, pid=process.pid)
         except asyncio.TimeoutError:
             _log("warning", "mcp_server_sigkill", server=name, pid=process.pid)
             try:
                 process.kill()
-                await process.wait()
+                await loop.run_in_executor(None, process.wait)
             except Exception as exc:
                 _log("error", "mcp_server_kill_failed", server=name, error=str(exc))
 
@@ -230,7 +239,7 @@ class MCPServerManager:
         while True:
             await asyncio.sleep(_MONITOR_INTERVAL)
             for name, process in list(self._processes.items()):
-                if process.returncode is not None:
+                if process.poll() is not None:
                     _log(
                         "warning",
                         "mcp_server_died_restarting",

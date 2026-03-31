@@ -1,11 +1,13 @@
 """Ingredient matching utilities for the Pantry-to-Plate scorer pipeline.
 
-Provides three public functions:
+Provides four public functions:
 
 * ``normalize`` — clean and standardise a single ingredient string.
 * ``is_duplicate`` — fuzzy equality check between two ingredient strings.
+* ``is_staple`` — return True if an ingredient is a common kitchen staple.
 * ``score_ingredient_match`` — compare a pantry list against a recipe's
-  ingredient list and return a structured match report.
+  ingredient list and return a structured match report (have / missing /
+  staples / score).
 
 All fuzzy matching uses ``rapidfuzz`` for performance.  Match thresholds are
 configurable via environment variables so they can be tuned without code
@@ -25,6 +27,41 @@ from rapidfuzz import fuzz, process
 
 _DEFAULT_MATCH_THRESHOLD = 80
 
+# Common kitchen staples that are almost always available in a home pantry.
+# Ingredients that fuzzy-match any entry here are excluded from the "missing"
+# list and from the match-score denominator, preventing them from unfairly
+# depressing a recipe's score.
+STAPLES: frozenset[str] = frozenset(
+    {
+        # Fats & oils
+        "oil", "olive oil", "vegetable oil", "canola oil", "coconut oil",
+        "butter", "margarine", "cooking spray",
+        # Salt & pepper
+        "salt", "sea salt", "kosher salt", "black pepper", "white pepper",
+        "pepper",
+        # Aromatics
+        "garlic", "onion", "shallot", "green onion", "scallion",
+        # Pantry basics
+        "water", "flour", "all-purpose flour", "bread flour",
+        "sugar", "brown sugar", "powdered sugar", "confectioners sugar",
+        "baking soda", "baking powder", "cornstarch",
+        "vinegar", "white vinegar", "apple cider vinegar",
+        # Dried herbs & spices
+        "oregano", "thyme", "rosemary", "basil", "parsley",
+        "cilantro", "cumin", "paprika", "smoked paprika",
+        "chili powder", "cayenne", "cayenne pepper",
+        "turmeric", "coriander", "bay leaf", "bay leaves",
+        "cinnamon", "nutmeg", "ginger", "garlic powder", "onion powder",
+        "red pepper flakes", "dried oregano", "dried thyme", "dried basil",
+        # Condiments / staple liquids
+        "soy sauce", "worcestershire sauce", "hot sauce",
+        "chicken broth", "vegetable broth", "beef broth",
+        "lemon juice", "lime juice",
+        # Dairy basics
+        "milk", "eggs", "egg",
+    }
+)
+
 # Prefixes stripped during normalisation.  Sorted longest-first so the regex
 # alternation matches greedily (e.g. "finely chopped" before "chopped").
 _PREFIX_PATTERN = re.compile(
@@ -40,6 +77,35 @@ _MULTI_SPACE = re.compile(r"\s{2,}")
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def is_staple(ingredient: str) -> bool:
+    """Return ``True`` if an ingredient is a common kitchen staple.
+
+    Normalises *ingredient* before checking against the ``STAPLES`` set, so
+    preparation-state prefixes (e.g. ``"minced garlic"``) are handled
+    correctly.
+
+    Args:
+        ingredient: Raw ingredient string.
+
+    Returns:
+        ``True`` if the normalised ingredient fuzzy-matches any entry in
+        ``STAPLES`` with a similarity score ≥ 85.
+
+    Examples:
+        >>> is_staple("minced garlic")
+        True
+        >>> is_staple("chicken breast")
+        False
+    """
+    norm = normalize(ingredient)
+    # Exact match first (fast path)
+    if norm in STAPLES:
+        return True
+    # Fuzzy match — handles minor plurals / wording variations
+    match = process.extractOne(norm, STAPLES, scorer=fuzz.ratio, score_cutoff=85)
+    return match is not None
 
 
 def normalize(ingredient: str) -> str:
@@ -115,12 +181,18 @@ def score_ingredient_match(
     meets or exceeds the threshold from the ``INGREDIENT_MATCH_THRESHOLD``
     environment variable (default: ``80``).
 
+    Ingredients identified as common kitchen staples (via ``is_staple``) that
+    are *not* in the user's pantry are placed in the ``"staples"`` bucket.
+    They are excluded from both the ``"missing"`` list and the score
+    denominator so they do not unfairly depress match scores.
+
     The match score is defined as::
 
-        score = len(have) / len(recipe_ingredients) * 100
+        effective_total = len(recipe_ingredients) - len(staples)
+        score = len(have) / effective_total * 100   # 100.0 when effective_total == 0
 
-    An empty recipe ingredient list yields ``score = 0.0`` and both ``have``
-    and ``missing`` as empty lists.
+    An empty recipe ingredient list yields ``score = 0.0`` and all three
+    lists empty.
 
     Args:
         pantry: Normalised ingredient strings the user has available, e.g.
@@ -130,19 +202,19 @@ def score_ingredient_match(
             API response are acceptable.
 
     Returns:
-        A dict with three keys:
+        A dict with four keys:
 
-        * ``"have"`` (``list[str]``): Recipe ingredients that were matched
-          against the pantry (in their original, un-normalised form).
-        * ``"missing"`` (``list[str]``): Recipe ingredients with no pantry
-          match (in their original form).
-        * ``"score"`` (``float``): Percentage of recipe ingredients covered,
-          ``0.0``–``100.0``.
+        * ``"have"`` (``list[str]``): Recipe ingredients matched in pantry.
+        * ``"missing"`` (``list[str]``): Non-staple ingredients absent from pantry.
+        * ``"staples"`` (``list[str]``): Staple ingredients absent from pantry
+          (excluded from scoring).
+        * ``"score"`` (``float``): Percentage of non-staple recipe ingredients
+          covered, ``0.0``–``100.0``.
 
     Examples:
         >>> result = score_ingredient_match(
         ...     ["chicken", "garlic", "lemon"],
-        ...     ["chicken breast", "garlic", "thyme", "lemon juice"],
+        ...     ["chicken breast", "garlic", "thyme", "lemon juice", "salt"],
         ... )
         >>> result["score"]
         75.0
@@ -150,16 +222,19 @@ def score_ingredient_match(
         ['chicken breast', 'garlic', 'lemon juice']
         >>> result["missing"]
         ['thyme']
+        >>> result["staples"]
+        ['salt']
     """
     threshold: int = int(os.getenv("INGREDIENT_MATCH_THRESHOLD", str(_DEFAULT_MATCH_THRESHOLD)))
 
     if not recipe_ingredients:
-        return {"have": [], "missing": [], "score": 0.0}
+        return {"have": [], "missing": [], "staples": [], "score": 0.0}
 
     normalised_pantry: list[str] = [normalize(p) for p in pantry]
 
     have: list[str] = []
     missing: list[str] = []
+    staples: list[str] = []
 
     for raw_ingredient in recipe_ingredients:
         norm_ingredient = normalize(raw_ingredient)
@@ -173,8 +248,11 @@ def score_ingredient_match(
 
         if match is not None:
             have.append(raw_ingredient)
+        elif is_staple(raw_ingredient):
+            staples.append(raw_ingredient)
         else:
             missing.append(raw_ingredient)
 
-    score = len(have) / len(recipe_ingredients) * 100
-    return {"have": have, "missing": missing, "score": round(score, 2)}
+    effective_total = len(recipe_ingredients) - len(staples)
+    score = (len(have) / effective_total * 100) if effective_total > 0 else 100.0
+    return {"have": have, "missing": missing, "staples": staples, "score": round(score, 2)}

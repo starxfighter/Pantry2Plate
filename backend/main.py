@@ -173,6 +173,8 @@ async def _search_generator(request: SearchRequest) -> AsyncGenerator[dict, None
         "parse_error": None,
         "search_results": [],
         "search_error": None,
+        "tavily_recipe_count": 0,
+        "spoonacular_recipe_count": 0,
         "scored_recipes": [],
         "langsmith_run_url": None,
         "current_step": "start",
@@ -184,9 +186,19 @@ async def _search_generator(request: SearchRequest) -> AsyncGenerator[dict, None
     try:
         async for chunk in graph.astream(state, config=config):
             # Each chunk is {node_name: state_snapshot}.
-            node_state: AgentState = next(iter(chunk.values()))
+            node_name = next(iter(chunk.keys()))
+            node_state: AgentState = chunk[node_name]
             step: str = node_state.get("current_step", "")
             scored = node_state.get("scored_recipes") or []
+
+            logger.info(
+                '{"event": "sse_chunk", "node": "%s", "step": "%s",'
+                ' "scored": %d, "search_results": %d, "tavily": %d, "spoonacular": %d}',
+                node_name, step, len(scored),
+                len(node_state.get("search_results") or []),
+                node_state.get("tavily_recipe_count", 0),
+                node_state.get("spoonacular_recipe_count", 0),
+            )
 
             payload: dict = {
                 "step": step,
@@ -194,15 +206,26 @@ async def _search_generator(request: SearchRequest) -> AsyncGenerator[dict, None
             }
             yield {"event": "message", "data": json.dumps(payload)}
 
-        # After the stream completes, emit the LangSmith trace URL if present.
-        # Retrieve it from the final checkpointed state.
+        # After the stream completes, read the final checkpointed state.
+        # The checkpoint is the authoritative source for both the LangSmith
+        # trace URL and the complete scored_recipes list.
         final = await graph.aget_state(config)
         run_url: str | None = None
+        final_recipes: list = []
         if final and final.values:
             run_url = final.values.get("langsmith_run_url")
+            final_recipes = final.values.get("scored_recipes") or []
+
+        logger.info(
+            '{"event": "done_checkpoint", "session_id": "%s", "recipe_count": %d}',
+            request.session_id, len(final_recipes),
+        )
+
         yield {
             "event": "done",
-            "data": json.dumps({"langsmith_run_url": run_url}),
+            "data": json.dumps(
+                {"langsmith_run_url": run_url, "scored_recipes": final_recipes}
+            ),
         }
 
     except Exception as exc:
