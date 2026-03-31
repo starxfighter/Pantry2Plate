@@ -10,6 +10,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+# asyncio_mode = auto in pytest.ini makes @pytest.mark.asyncio optional, but
+# we apply it explicitly here as required project spec for this test module.
+
 from backend.agents.parser_agent import ParserAgent, _strip_fences, _try_parse
 from backend.graph import AgentState
 
@@ -38,8 +41,12 @@ def state() -> AgentState:
     )
 
 
-def _make_mcp_patch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Patch MultiServerMCPClient + load_mcp_tools so no subprocess is spawned."""
+def _make_mcp_patch(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Patch MultiServerMCPClient + load_mcp_tools so no subprocess is spawned.
+
+    Returns:
+        The mock ``save_pantry`` tool so callers can assert on its invocations.
+    """
     mock_tool = MagicMock()
     mock_tool.name = "save_pantry"
     mock_tool.ainvoke = AsyncMock(return_value="ok")
@@ -64,6 +71,7 @@ def _make_mcp_patch(monkeypatch: pytest.MonkeyPatch) -> None:
         "backend.agents.parser_agent.load_mcp_tools",
         fake_load_tools,
     )
+    return mock_tool
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +135,7 @@ class TestStripFences:
 
 
 class TestParserAgentRun:
+    @pytest.mark.asyncio
     async def test_valid_llm_response_sets_ingredients(
         self, monkeypatch: pytest.MonkeyPatch, state: AgentState
     ) -> None:
@@ -144,9 +153,11 @@ class TestParserAgentRun:
         assert result["parse_error"] is None
         assert result["current_step"] == "searching"
 
+    @pytest.mark.asyncio
     async def test_markdown_fenced_response_is_parsed(
         self, monkeypatch: pytest.MonkeyPatch, state: AgentState
     ) -> None:
+        """test_json_retry: fenced JSON is stripped and parsed on the retry path."""
         _make_mcp_patch(monkeypatch)
         agent = ParserAgent()
 
@@ -160,9 +171,11 @@ class TestParserAgentRun:
         assert result["parsed_ingredients"] == ["egg", "butter"]
         assert result["parse_error"] is None
 
+    @pytest.mark.asyncio
     async def test_unparseable_response_sets_error(
         self, monkeypatch: pytest.MonkeyPatch, state: AgentState
     ) -> None:
+        """test_bad_json_sets_error: both attempts fail → parse_error set, ingredients []."""
         _make_mcp_patch(monkeypatch)
         agent = ParserAgent()
 
@@ -177,6 +190,7 @@ class TestParserAgentRun:
         assert result["parse_error"] is not None
         assert "non-JSON" in result["parse_error"]
 
+    @pytest.mark.asyncio
     async def test_llm_exception_sets_error(
         self, monkeypatch: pytest.MonkeyPatch, state: AgentState
     ) -> None:
@@ -192,6 +206,7 @@ class TestParserAgentRun:
         assert result["parse_error"] is not None
         assert "RuntimeError" in result["parse_error"]
 
+    @pytest.mark.asyncio
     async def test_empty_ingredient_list_allowed(
         self, monkeypatch: pytest.MonkeyPatch, state: AgentState
     ) -> None:
@@ -208,3 +223,44 @@ class TestParserAgentRun:
         # An empty JSON array is valid — parse_error should be None
         assert result["parsed_ingredients"] == []
         assert result["parse_error"] is None
+
+    @pytest.mark.asyncio
+    async def test_empty_input_handled(
+        self, monkeypatch: pytest.MonkeyPatch, state: AgentState
+    ) -> None:
+        """test_empty_input_handled: whitespace raw_input returns gracefully without exception."""
+        state["raw_input"] = "   "
+        _make_mcp_patch(monkeypatch)
+        agent = ParserAgent()
+
+        # LLM receives the whitespace string and returns an empty list.
+        mock_response = MagicMock()
+        mock_response.content = "[]"
+        agent.model = MagicMock()
+        agent.model.ainvoke = AsyncMock(return_value=mock_response)
+
+        # Must not raise.
+        result = await agent.run(state)
+
+        assert isinstance(result, dict)
+        assert result["parsed_ingredients"] == []
+        assert result["parse_error"] is None
+
+    @pytest.mark.asyncio
+    async def test_pantry_save_called(
+        self, monkeypatch: pytest.MonkeyPatch, state: AgentState
+    ) -> None:
+        """test_pantry_save_called: save_pantry MCP tool is invoked with correct args on success."""
+        mock_save_tool = _make_mcp_patch(monkeypatch)
+        agent = ParserAgent()
+
+        mock_response = MagicMock()
+        mock_response.content = '["chicken", "garlic"]'
+        agent.model = MagicMock()
+        agent.model.ainvoke = AsyncMock(return_value=mock_response)
+
+        await agent.run(state)
+
+        mock_save_tool.ainvoke.assert_called_once_with(
+            {"session_id": "test-session", "ingredients": ["chicken", "garlic"]}
+        )

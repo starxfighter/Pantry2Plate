@@ -322,36 +322,97 @@ class TestParseRecipeJson:
 # ---------------------------------------------------------------------------
 
 
+def _make_recipe(name: str, url: str, cuisine: str | None = None) -> dict:
+    return {
+        "name": name,
+        "url": url,
+        "source": "Test",
+        "ingredient_list": [],
+        "steps_summary": "",
+        "cook_time_minutes": None,
+        "cuisine": cuisine,
+        "dietary_tags": [],
+    }
+
+
 class TestSearchAgentRun:
-    async def test_successful_search_populates_results(
-        self, state: AgentState
-    ) -> None:
+    @pytest.mark.asyncio
+    async def test_concurrent_fetch(self, state: AgentState) -> None:
+        """Both _search_tavily and _search_spoonacular are invoked and their
+        results merged into search_results.
+
+        NOTE: ADR-004 documents that the implementation runs these calls
+        sequentially (not via asyncio.gather) to avoid Windows ProactorEventLoop
+        IOCP hangs.  This test therefore verifies that both sources are called
+        and their results combined, which is the observable contract regardless
+        of whether execution is concurrent or sequential.
+        """
         agent = SearchAgent()
-        fake_recipes = [
-            {
-                "name": "Garlic Chicken",
-                "url": "https://example.com/1",
-                "source": "Example",
-                "ingredient_list": ["chicken", "garlic"],
-                "steps_summary": "",
-                "cook_time_minutes": 30,
-                "cuisine": "Italian",
-                "dietary_tags": [],
-            }
+        tavily_mock = AsyncMock(return_value=[_make_recipe("Tavily Recipe", "https://t.com/1")])
+        spoon_mock = AsyncMock(return_value=[_make_recipe("Spoon Recipe", "https://s.com/1")])
+
+        with patch.object(agent, "_search_tavily", tavily_mock):
+            with patch.object(agent, "_search_spoonacular", spoon_mock):
+                result = await agent.run(state)
+
+        tavily_mock.assert_called_once()
+        spoon_mock.assert_called_once()
+        names = [r["name"] for r in result["search_results"]]
+        assert "Tavily Recipe" in names
+        assert "Spoon Recipe" in names
+
+    @pytest.mark.asyncio
+    async def test_deduplication(self, state: AgentState) -> None:
+        """Two results with the same URL → only one in output."""
+        agent = SearchAgent()
+        url = "https://example.com/garlic-chicken"
+        recipe = _make_recipe("Garlic Chicken", url)
+
+        with patch.object(agent, "_search_tavily", AsyncMock(return_value=[recipe])):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=[recipe])):
+                result = await agent.run(state)
+
+        assert len(result["search_results"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_filter_applied(self, state: AgentState) -> None:
+        """Filter {"cuisine": "Italian"} excludes non-Italian results."""
+        state["filters"] = {"cuisine": "Italian"}
+        agent = SearchAgent()
+        recipes = [
+            _make_recipe("Pasta Carbonara", "https://example.com/pasta", cuisine="Italian"),
+            _make_recipe("Beef Tacos", "https://example.com/tacos", cuisine="Mexican"),
+            _make_recipe("Sushi", "https://example.com/sushi", cuisine="Japanese"),
         ]
 
-        with patch.object(agent, "_search_tavily", AsyncMock(return_value=fake_recipes)):
+        with patch.object(agent, "_search_tavily", AsyncMock(return_value=recipes)):
             with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=[])):
                 result = await agent.run(state)
 
         assert len(result["search_results"]) == 1
-        assert result["search_results"][0]["name"] == "Garlic Chicken"
-        assert result["search_error"] is None
-        assert result["current_step"] == "scoring"
+        assert result["search_results"][0]["name"] == "Pasta Carbonara"
 
-    async def test_both_sources_fail_sets_search_error(
-        self, state: AgentState
-    ) -> None:
+    @pytest.mark.asyncio
+    async def test_one_source_fails(self, state: AgentState) -> None:
+        """Tavily raises; Spoonacular returns 3 results → search_results populated,
+        search_error NOT set."""
+        agent = SearchAgent()
+        spoon_recipes = [
+            _make_recipe("Lemon Chicken", "https://spoon.com/1"),
+            _make_recipe("Garlic Shrimp", "https://spoon.com/2"),
+            _make_recipe("Pasta Primavera", "https://spoon.com/3"),
+        ]
+
+        with patch.object(agent, "_search_tavily", AsyncMock(side_effect=RuntimeError("Tavily down"))):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=spoon_recipes)):
+                result = await agent.run(state)
+
+        assert len(result["search_results"]) == 3
+        assert result["search_error"] is None
+
+    @pytest.mark.asyncio
+    async def test_both_sources_fail(self, state: AgentState) -> None:
+        """Both sources raise → search_error set, search_results empty."""
         agent = SearchAgent()
 
         with patch.object(agent, "_search_tavily", AsyncMock(side_effect=RuntimeError("Tavily down"))):
@@ -362,95 +423,32 @@ class TestSearchAgentRun:
         assert result["search_error"] is not None
         assert "Both sources failed" in result["search_error"]
 
-    async def test_one_source_fails_uses_other(
+    @pytest.mark.asyncio
+    async def test_successful_search_populates_results(
         self, state: AgentState
     ) -> None:
         agent = SearchAgent()
-        spoon_recipes = [
-            {
-                "name": "Lemon Chicken",
-                "url": "https://spoon.com/1",
-                "source": "Spoonacular",
-                "ingredient_list": ["chicken", "lemon"],
-                "steps_summary": "",
-                "cook_time_minutes": 25,
-                "cuisine": None,
-                "dietary_tags": [],
-            }
-        ]
+        fake_recipes = [_make_recipe("Garlic Chicken", "https://example.com/1", cuisine="Italian")]
+        fake_recipes[0]["ingredient_list"] = ["chicken", "garlic"]
+        fake_recipes[0]["cook_time_minutes"] = 30
 
-        with patch.object(agent, "_search_tavily", AsyncMock(side_effect=RuntimeError("Tavily down"))):
-            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=spoon_recipes)):
-                result = await agent.run(state)
-
-        assert len(result["search_results"]) == 1
-        assert result["search_error"] is None
-
-    async def test_deduplication_applied(self, state: AgentState) -> None:
-        agent = SearchAgent()
-        url = "https://example.com/garlic-chicken"
-        recipe = {
-            "name": "Garlic Chicken",
-            "url": url,
-            "source": "X",
-            "ingredient_list": [],
-            "steps_summary": "",
-            "cook_time_minutes": None,
-            "cuisine": None,
-            "dietary_tags": [],
-        }
-
-        with patch.object(agent, "_search_tavily", AsyncMock(return_value=[recipe])):
-            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=[recipe])):
-                result = await agent.run(state)
-
-        assert len(result["search_results"]) == 1
-
-    async def test_filters_applied(self, state: AgentState) -> None:
-        state["filters"] = {"cuisine": "italian"}
-        agent = SearchAgent()
-        recipes = [
-            {
-                "name": "Pasta",
-                "url": "https://example.com/pasta",
-                "source": "X",
-                "ingredient_list": [],
-                "steps_summary": "",
-                "cook_time_minutes": None,
-                "cuisine": "Italian",
-                "dietary_tags": [],
-            },
-            {
-                "name": "Tacos",
-                "url": "https://example.com/tacos",
-                "source": "X",
-                "ingredient_list": [],
-                "steps_summary": "",
-                "cook_time_minutes": None,
-                "cuisine": "Mexican",
-                "dietary_tags": [],
-            },
-        ]
-
-        with patch.object(agent, "_search_tavily", AsyncMock(return_value=recipes)):
+        with patch.object(agent, "_search_tavily", AsyncMock(return_value=fake_recipes)):
             with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=[])):
                 result = await agent.run(state)
 
         assert len(result["search_results"]) == 1
-        assert result["search_results"][0]["name"] == "Pasta"
+        assert result["search_results"][0]["name"] == "Garlic Chicken"
+        assert result["search_error"] is None
+        assert result["current_step"] == "scoring"
 
+    @pytest.mark.asyncio
     async def test_per_source_counts_tracked(self, state: AgentState) -> None:
         agent = SearchAgent()
         tavily_recipes = [
-            {"name": "R1", "url": "https://a.com/1", "ingredient_list": [], "steps_summary": "",
-             "cook_time_minutes": None, "cuisine": None, "dietary_tags": []},
-            {"name": "R2", "url": "https://a.com/2", "ingredient_list": [], "steps_summary": "",
-             "cook_time_minutes": None, "cuisine": None, "dietary_tags": []},
+            _make_recipe("R1", "https://a.com/1"),
+            _make_recipe("R2", "https://a.com/2"),
         ]
-        spoon_recipes = [
-            {"name": "R3", "url": "https://b.com/1", "ingredient_list": [], "steps_summary": "",
-             "cook_time_minutes": None, "cuisine": None, "dietary_tags": []},
-        ]
+        spoon_recipes = [_make_recipe("R3", "https://b.com/1")]
 
         with patch.object(agent, "_search_tavily", AsyncMock(return_value=tavily_recipes)):
             with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=spoon_recipes)):
