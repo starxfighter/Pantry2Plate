@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -32,6 +33,8 @@ from rapidfuzz import fuzz
 
 from backend.agents.base import BaseAgent
 from backend.graph import AgentState
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -364,16 +367,31 @@ class SearchAgent(BaseAgent):
                 state["search_results"] = []
                 return state
 
-            raw_results: list[dict] = []
-            if not tavily_error:
-                raw_results.extend(tavily_result)  # type: ignore[arg-type]
-            if not spoonacular_error:
-                raw_results.extend(spoonacular_result)  # type: ignore[arg-type]
+            tavily_raw: list[dict] = [] if tavily_error else list(tavily_result)  # type: ignore[arg-type]
+            spoonacular_raw: list[dict] = [] if spoonacular_error else list(spoonacular_result)  # type: ignore[arg-type]
+            raw_results = tavily_raw + spoonacular_raw
 
             # --- Normalise, deduplicate, filter, cap ---
             normalised = [r for r in (_normalise_recipe(r) for r in raw_results) if r]
             deduped = _deduplicate(normalised, dedup_threshold)
             filtered = _apply_filters(deduped, state.get("filters") or {})
+
+            # Track per-source counts for observability (LangSmith outputs).
+            n_tavily_norm = len([r for r in (_normalise_recipe(r) for r in tavily_raw) if r])
+            n_spoon_norm = len([r for r in (_normalise_recipe(r) for r in spoonacular_raw) if r])
+            state["tavily_recipe_count"] = n_tavily_norm
+            state["spoonacular_recipe_count"] = n_spoon_norm
+
+            _log.info(
+                '{"event": "search_results", "session_id": "%s",'
+                ' "tavily_raw": %d, "spoonacular_raw": %d,'
+                ' "tavily_norm": %d, "spoonacular_norm": %d,'
+                ' "after_dedup": %d, "after_filter": %d, "final": %d}',
+                state.get("session_id", ""),
+                len(tavily_raw), len(spoonacular_raw),
+                n_tavily_norm, n_spoon_norm,
+                len(deduped), len(filtered), min(len(filtered), max_results),
+            )
 
             state["search_results"] = filtered[:max_results]
             state["search_error"] = None
@@ -420,8 +438,9 @@ class SearchAgent(BaseAgent):
             if not search_tool:
                 raise RuntimeError("web_search_recipes tool not available")
 
+            tavily_max = int(os.getenv("TAVILY_MAX_RESULTS", "15"))
             raw_tool_output = await search_tool.ainvoke(
-                {"query": query, "max_results": 15}
+                {"query": query, "max_results": tavily_max}
             )
             raw_results: list[dict] = _unwrap_tool_list(raw_tool_output)
 

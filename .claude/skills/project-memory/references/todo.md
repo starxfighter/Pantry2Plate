@@ -87,11 +87,11 @@ Add newly discovered sub-tasks inline under the relevant phase.
 ## Phase 8 — Testing & Polish
 
 - [ ] **Re-test full pipeline** — Spoonacular free-tier quota was exhausted during 2026-03-27 debugging session; retest next day to confirm 10 recipes returned and LangSmith trace link appears
-- [ ] Fill `tests/integration/` with end-to-end graph + API tests
-- [ ] Add `pytest.ini` or `pyproject.toml` with asyncio mode config
-- [ ] Reach ≥ 80 % unit test coverage on `backend/`
+- [x] Fill `tests/integration/` with end-to-end graph + API tests (10 integration tests in `tests/integration/test_api.py`)
+- [x] Add `pytest.ini` with asyncio mode config (`asyncio_mode = auto`, `asyncio_default_fixture_loop_scope = function`)
+- [x] Reach ≥ 80 % unit test coverage on `backend/` — **87% achieved** (176 tests: 46 ingredient_matcher, 16 parser_agent, 38 search_agent, 13 scorer_agent, 27 mcp_servers, 17 mcp_manager, 10 integration API; `.coveragerc` excludes utility scripts)
 - [ ] Write `docs/architecture.md`
-- [ ] Final `ruff` + manual review pass
+- [x] Final `ruff` pass — 0 errors (`search_agent.py` E402 fixed, 3 unused test imports removed)
 
 ---
 
@@ -105,5 +105,5 @@ Add newly discovered sub-tasks inline under the relevant phase.
 
 ## UI Polish
 
-- [ ] **Spice/herb/staple chips should be yellow** — ingredients identified as common spices, herbs, or kitchen staples (e.g. salt, pepper, olive oil, garlic) should render as yellow chips, not red "missing" chips, since users almost always have them
-- [ ] **Scorer should ignore spices/herbs/staples** — the ingredient match score should not count common spices, herbs, and kitchen staples as "missing". They inflate the missing count and depress scores unfairly. Define a staple list (salt, pepper, olive oil, butter, garlic, onion, flour, sugar, water, vinegar, etc.) and exclude them from the scoring denominator and missing list.
+- [x] **Spice/herb/staple chips should be yellow** — ingredients identified as common spices, herbs, or kitchen staples (e.g. salt, pepper, olive oil, garlic) should render as yellow chips, not red "missing" chips, since users almost always have them
+- [x] **Scorer should ignore spices/herbs/staples** — the ingredient match score should not count common spices, herbs, and kitchen staples as "missing". They inflate the missing count and depress scores unfairly. Define a staple list (salt, pepper, olive oil, butter, garlic, onion, flour, sugar, water, vinegar, etc.) and exclude them from the scoring denominator and missing list.

@@ -4,26 +4,20 @@
 
 ## ▶ RESUME HERE
 
-**Last session ended:** 2026-03-27
-**Stopped at:** Session 7 complete. Bug fixes pushed to `develop`. Spoonacular free-tier quota
-exhausted during debugging — **re-test the full pipeline first** before continuing Phase 8.
+**Last session ended:** 2026-03-31
+**Stopped at:** Phase 8 testing complete. All tests passing, 87% coverage, 0 ruff errors.
 
-**Next action (immediate):** Re-test with fresh Spoonacular quota:
-- Run a search with 4+ ingredients and confirm 10 recipes returned
-- Confirm LangSmith trace link appears in the UI
+**Next action:**
+- **Re-test full pipeline** with live server (Spoonacular quota should have reset)
+- Write `docs/architecture.md` (last unchecked Phase 8 item)
+- Optional: commit + PR to main
 
-**Next action (Phase 8):**
-- `pytest.ini` / `pyproject.toml` with asyncio mode config
-- Unit tests for each agent in `tests/unit/`
-- Unit tests for each MCP server in `tests/unit/`
-- Integration test: full graph run with mocked MCP tools
-- Integration tests for API endpoints (`POST /search`, `GET /health`, `GET /pantry`, `DELETE /pantry`)
-- Reach ≥ 80% unit test coverage on `backend/`
-- Final `ruff` pass
-
-**Queued UI polish (after Phase 8):**
-- Yellow chips for spices/herbs/staples (currently shown as red "missing")
-- Scorer should exclude staples from match scoring denominator
+**Known state:**
+- 176 tests: 166 unit + 10 integration, all passing
+- Coverage: 87% on `backend/` (with `.coveragerc` omitting `graph_test.py` + `smoke_test.py`)
+- Ruff: 0 errors
+- Debug logging retained in `main.py` (sse_chunk, done_checkpoint) and `search_agent.py` (search_results) — kept as observability
+- `TAVILY_MAX_RESULTS=10`, `TOP_RECIPE_COUNT=10` in `.env`
 
 > Note: `D:\GenAI Workspace\Work Files\` is retired — do not read those files.
 > Canonical memory lives in `.claude/skills/project-memory/references/`.
@@ -31,6 +25,31 @@ exhausted during debugging — **re-test the full pipeline first** before contin
 ---
 
 ## Session Log
+
+### 2026-03-31 — Session 9 (Phase 8 — Testing)
+
+**Completed:**
+- Created `pytest.ini` with `asyncio_mode = auto`, `asyncio_default_fixture_loop_scope = function`, `integration` mark registered
+- Created `tests/conftest.py`: sets fallback env vars; imports `backend.graph` to pre-populate module cache and avoid circular import errors when individual agent modules are imported in tests
+- `tests/unit/test_ingredient_matcher.py` — 46 tests; 100% coverage of `normalize`, `is_duplicate`, `is_staple`, `score_ingredient_match`
+- `tests/unit/test_parser_agent.py` — 16 tests; covers `_try_parse`, `_strip_fences`, and `ParserAgent.run()` (mocked LLM + MCP)
+- `tests/unit/test_search_agent.py` — 38 tests; covers all pure helpers (`_build_query`, `_is_duplicate`, `_deduplicate`, `_apply_filters`, `_normalise_recipe`, `_unwrap_tool_list`, `_source_from_url`, `_parse_recipe_json`) + `SearchAgent.run()` (patched `_search_tavily`/`_search_spoonacular`)
+- `tests/unit/test_scorer_agent.py` — 13 tests; covers `_extract_text` + `ScorerAgent.run()` (patched `_log_to_langsmith`)
+- `tests/unit/test_mcp_servers.py` — 27 tests; covers pantry (pure functions), Tavily/Spoonacular/LangSmith (mocked httpx/TavilyClient)
+- `tests/unit/test_mcp_manager.py` — 17 tests; covers `_log`, `is_running`, `_assert_all_running`, `_launch_one`, `start_all`, `stop_all`, `_terminate`
+- `tests/integration/test_api.py` — 10 tests; covers `GET /health`, `GET /pantry`, `DELETE /pantry`, `POST /search` (mocked graph + MCP manager)
+- Created `.coveragerc` to omit `graph_test.py` and `smoke_test.py` from coverage measurement
+- Final `ruff check`: fixed `search_agent.py` E402 (moved `_log` assignment after imports), removed 3 unused test imports
+- **Final result: 176 tests passing, 87% coverage on `backend/`, 0 ruff errors**
+
+**Decisions made:**
+- Tests import `backend.graph` first (via conftest.py) to break the circular import cycle; individual agent imports work correctly after that
+- `ASGITransport` in httpx does not trigger ASGI lifespan events — integration tests set `app.state.mcp_manager` directly rather than relying on lifespan startup
+- Excluded `graph_test.py` and `smoke_test.py` from coverage via `.coveragerc` (manual utility scripts, not production code)
+
+**Blockers:** None
+
+---
 
 ### 2026-03-25 — Session 1
 
