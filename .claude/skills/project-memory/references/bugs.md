@@ -13,6 +13,31 @@ _No open bugs._
 
 ---
 
+### BUG-007: GET/DELETE /pantry read MemorySaver instead of SQLite — 2026-04-07
+- **Status:** Resolved
+- **Component:** `backend/main.py`, `backend/mcp_servers/pantry_server.py`
+
+**Symptom:** After making pantry storage persistent (SQLite), `GET /pantry/{session_id}`
+still returned `[]` after a server restart. `DELETE /pantry/{session_id}` deleted from
+MemorySaver but left the SQLite row intact (orphaned data).
+
+**Root cause:** The two pantry REST endpoints read/wrote `parsed_ingredients` from the
+LangGraph `MemorySaver` checkpoint (ADR-005), which is in-memory and lost on restart.
+The `save_pantry` MCP tool (called by `ParserAgent`) wrote to SQLite, but the REST
+endpoints never read from it. The persistence layer and the API were completely
+disconnected.
+
+**Fix:** Updated `get_pantry_route` and `delete_pantry_route` in `main.py` to call
+`_db_get_pantry(session_id)` and `_db_clear_pantry(session_id)` directly (imported from
+`pantry_server`). ADR-005 superseded by ADR-008.
+
+**Watch out for:** Two `sqlite3.Connection` objects now connect to the same file (one
+in the MCP subprocess, one in the main process). SQLite handles this safely via file
+locking, but on Windows with WAL mode disabled (the default), concurrent writes
+serialize. Not a concern for single-user local use.
+
+---
+
 ### BUG-006 — LangSmith share call fails 404 due to eventual consistency
 
 - **Date found:** 2026-03-27

@@ -1,6 +1,6 @@
 # Architecture — Pantry-to-Plate
 
-_Last updated: 2026-03-27_
+_Last updated: 2026-04-07_
 
 ---
 
@@ -31,7 +31,7 @@ LangGraph StateGraph
        │  MCP stdio tool calls (subprocess)
        ▼
 4 FastMCP Servers (stdio subprocesses)
-  ├── pantry_server.py      — in-memory ingredient store
+  ├── pantry_server.py      — SQLite ingredient store (data/pantry.db)
   ├── tavily_server.py      — web recipe search
   ├── spoonacular_server.py — recipe database search
   └── langsmith_server.py   — observability trace logging
@@ -73,6 +73,7 @@ START → parse_node → (error?) → error_node → END
 | `search_error` | SearchAgent | Non-None if both search sources failed |
 | `scored_recipes` | ScorerAgent | Ranked `ScoredRecipe` dicts |
 | `langsmith_run_url` | ScorerAgent | Public LangSmith trace URL |
+| `run_tags` | Caller | Optional LangSmith tags (e.g. `["eval-v0.1"]`) |
 | `current_step` | Graph nodes | Pipeline stage label |
 | `start_time` | Caller | Unix timestamp for latency tracking |
 
@@ -145,6 +146,9 @@ See `.env.example` for the full list.  Key variables:
 | `LANGSMITH_PROJECT` | LangSmith project name |
 | `TOP_RECIPE_COUNT` | Max ranked recipes returned (default: 10) |
 | `MAX_RECIPE_RESULTS` | Max raw search results (default: 15) |
+| `PANTRY_DB_PATH` | SQLite file for pantry store (default: `data/pantry.db`) |
+| `SEARCH_TIMEOUT_SECONDS` | Hard cap on `/search` pipeline execution (default: 120) |
+| `SPOONACULAR_ENABLED` | Set `false` to skip Spoonacular when quota exhausted |
 
 ---
 

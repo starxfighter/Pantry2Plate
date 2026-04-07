@@ -77,6 +77,50 @@ be hard or costly to reverse._
 - **Consequences**: `log_search_run` takes up to 4s extra when retries are needed. LangSmith
   errors still degrade gracefully (empty string → no trace link shown).
 
+### ADR-007: SQLite-backed pantry server — 2026-04-07
+- **Decision**: `pantry_server.py` stores ingredient lists in a SQLite database
+  (`data/pantry.db`) instead of the in-memory `_store` dict.
+- **Why**: The in-memory store is lost on every server restart. Users' pantries now
+  survive restarts, making the persistent-pantry feature actually useful.
+  `sqlite3` is stdlib — zero new dependencies.
+- **Alternatives rejected**: JSON file (corruption risk on concurrent writes);
+  Redis (overkill for single-user local app); continuing with MemorySaver-only
+  (MemorySaver is also in-memory and equally ephemeral).
+- **Consequences**: `PANTRY_DB_PATH` env var controls DB location (default
+  `data/pantry.db`). Tests set `PANTRY_DB_PATH=:memory:` via conftest.
+  The MCP subprocess and the main FastAPI process connect to the same SQLite
+  file (two separate `sqlite3.Connection` objects); SQLite file locking handles
+  concurrent access safely.
+
+### ADR-008: Pantry REST endpoints read SQLite directly — 2026-04-07
+- **Decision**: `GET /pantry/{session_id}` and `DELETE /pantry/{session_id}` call
+  `_db_get_pantry` / `_db_clear_pantry` (imported from `pantry_server`) directly.
+  Supersedes ADR-005, which read from MemorySaver checkpoint.
+- **Why**: ADR-005's MemorySaver approach was the only durable store at the time.
+  Now that `pantry_server.py` uses SQLite, the canonical pantry data lives there.
+  The MemorySaver checkpoint is still in-memory and lost on restart, so reading
+  from it would defeat the persistence feature.
+- **Alternatives rejected**: Opening an MCP session from the route handler to call
+  pantry MCP tools (correct but adds subprocess overhead for simple reads).
+- **Consequences**: The route handler imports `backend.mcp_servers.pantry_server`
+  directly — both the main process and the pantry subprocess connect to the same
+  SQLite file. The `_conn` module attribute is shared at the Python level within
+  each process.
+
+### ADR-009: asyncio.timeout for SSE pipeline hard cap — 2026-04-07
+- **Decision**: `_search_generator` wraps `graph.astream` in
+  `asyncio.timeout(_SEARCH_TIMEOUT)` (default 120 s). On expiry a `TimeoutError`
+  is caught and an `event: error` SSE message is emitted.
+- **Why**: Without a timeout, a hung LLM call or MCP subprocess leaves the SSE
+  connection open indefinitely, consuming server resources and leaving the browser
+  in an infinite loading state.
+- **Alternatives rejected**: Frontend `AbortController` with a timeout (already
+  exists for abort-on-clear, but doesn't close the server-side generator); per-agent
+  timeouts (more granular but requires changing all three agents).
+- **Consequences**: `SEARCH_TIMEOUT_SECONDS` env var (default 120) allows tuning
+  per environment. `TimeoutError` is caught before the generic `Exception` handler
+  so it gets a descriptive "timed out after Ns" message.
+
 ### ADR-002: Single HTML file frontend with no build step — 2026-03-25
 - **Decision**: Ship `frontend/index.html` as a self-contained file with inline
   CSS and vanilla JS. No npm, no bundler, no framework.

@@ -97,12 +97,13 @@ Add newly discovered sub-tasks inline under the relevant phase.
 
 ## Backlog / Nice-to-Have
 
-- [ ] Docker Compose for local development
+- [x] Docker Compose for local development — `Dockerfile`, `docker-compose.yml`, `.dockerignore` added
+- [ ] Docker: install WSL2 (`wsl --install`, reboot) then Docker Desktop (`winget install Docker.DockerDesktop`), then test with `docker compose up --build` from project root
 - [ ] GitHub Actions: add integration test job (requires secrets)
-- [ ] GitHub Actions: bump action versions to Node.js 24-compatible releases before 2026-06-02 deadline — in `.github/workflows/ci.yml` replace `actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4` with their latest major versions that ship with Node.js 24 (check each repo's releases). Current warning fires on every CI run.
-- [ ] Rate-limit handling for Spoonacular free tier
-- [ ] Ingredient quantity parsing (e.g. "2 cups of flour")
-- [ ] Persistent pantry across sessions (replace in-memory store)
+- [x] GitHub Actions: Node.js 24 — added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` to workflow env; actions now run on Node.js 24 ahead of the 2026-06-02 deadline
+- [x] Rate-limit handling for Spoonacular free tier — `SPOONACULAR_ENABLED=false` env var skips Spoonacular entirely; detail loop bails after 3 consecutive empty responses
+- [x] Ingredient quantity parsing — `_QUANTITY_PATTERN` regex in `normalize()` strips leading quantities ("2 cups of flour" → "flour", "500g chicken breast" → "chicken breast", etc.); 7 new tests added
+- [x] Persistent pantry across sessions — SQLite (`data/pantry.db`), `PANTRY_DB_PATH` env var, tests use `:memory:`
 
 ## UI Polish
 
