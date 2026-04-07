@@ -30,7 +30,8 @@ from backend.graph import CONFIG_TEMPLATE, AgentState, graph
 @pytest.fixture(autouse=True)
 def _require_anthropic_key() -> None:
     """Skip every test in this module when ANTHROPIC_API_KEY is not configured."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not key or key.startswith("test-"):
         pytest.skip("ANTHROPIC_API_KEY not set — skipping live graph integration tests")
 
 

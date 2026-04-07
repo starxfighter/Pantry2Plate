@@ -17,6 +17,11 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from backend.mcp_servers.pantry_server import (
+    _conn as _pantry_conn,
+    save_pantry as _db_save_pantry,
+)
+
 # ---------------------------------------------------------------------------
 # App fixture
 # ---------------------------------------------------------------------------
@@ -30,6 +35,16 @@ def mock_mcp_manager():
     manager.stop_all = AsyncMock(return_value=None)
     manager.is_running = True
     return manager
+
+
+@pytest.fixture(autouse=True)
+def clear_pantry_db() -> None:
+    """Wipe the in-memory pantry table before and after each integration test."""
+    _pantry_conn.execute("DELETE FROM pantry")
+    _pantry_conn.commit()
+    yield
+    _pantry_conn.execute("DELETE FROM pantry")
+    _pantry_conn.commit()
 
 
 @pytest_asyncio.fixture
@@ -92,17 +107,10 @@ class TestPantryGetEndpoint:
         assert response.status_code == 200
         assert response.json() == []
 
-    async def test_get_pantry_after_state_update(self, client: AsyncClient) -> None:
-        """After patching the graph state, endpoint should return that data."""
-        mock_state = MagicMock()
-        mock_state.values = {"parsed_ingredients": ["chicken", "garlic"]}
-
-        with patch(
-            "backend.main.graph.aget_state",
-            AsyncMock(return_value=mock_state),
-        ):
-            response = await client.get("/pantry/session-abc")
-
+    async def test_get_pantry_with_saved_data(self, client: AsyncClient) -> None:
+        """Data written to the SQLite pantry store is returned by GET /pantry."""
+        _db_save_pantry("session-abc", ["chicken", "garlic"])
+        response = await client.get("/pantry/session-abc")
         assert response.status_code == 200
         assert response.json() == ["chicken", "garlic"]
 
@@ -115,21 +123,21 @@ class TestPantryGetEndpoint:
 @pytest.mark.integration
 class TestPantryDeleteEndpoint:
     async def test_delete_pantry_returns_cleared(self, client: AsyncClient) -> None:
-        with patch(
-            "backend.main.graph.aupdate_state",
-            AsyncMock(return_value=None),
-        ):
-            response = await client.delete("/pantry/session-abc")
-
+        _db_save_pantry("session-abc", ["chicken"])
+        response = await client.delete("/pantry/session-abc")
         assert response.status_code == 200
         assert response.json() == {"cleared": True}
 
+    async def test_delete_pantry_removes_data(self, client: AsyncClient) -> None:
+        """After DELETE, a subsequent GET should return an empty list."""
+        _db_save_pantry("session-del", ["eggs", "butter"])
+        await client.delete("/pantry/session-del")
+        response = await client.get("/pantry/session-del")
+        assert response.json() == []
+
     async def test_delete_pantry_graceful_on_error(self, client: AsyncClient) -> None:
-        """Even if the graph raises, endpoint returns cleared=True."""
-        with patch(
-            "backend.main.graph.aupdate_state",
-            AsyncMock(side_effect=RuntimeError("Checkpoint error")),
-        ):
+        """Even if the DB raises, endpoint returns cleared=True."""
+        with patch("backend.main._db_clear_pantry", side_effect=RuntimeError("DB error")):
             response = await client.delete("/pantry/bad-session")
 
         assert response.status_code == 200
@@ -174,6 +182,14 @@ def _parse_sse_done_event(body: str) -> dict | None:
 class TestSearchEndpoint:
     async def test_search_missing_fields_returns_422(self, client: AsyncClient) -> None:
         response = await client.post("/search", json={})
+        assert response.status_code == 422
+
+    async def test_search_raw_input_too_long_returns_422(self, client: AsyncClient) -> None:
+        """raw_input longer than 2000 chars should be rejected before hitting the graph."""
+        response = await client.post(
+            "/search",
+            json={"raw_input": "x" * 2001, "session_id": "s1", "filters": {}},
+        )
         assert response.status_code == 422
 
     async def test_search_streams_sse_events(self, client: AsyncClient) -> None:
