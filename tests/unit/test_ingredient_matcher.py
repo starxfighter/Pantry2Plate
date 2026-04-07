@@ -63,6 +63,30 @@ class TestNormalize:
     def test_empty_string(self) -> None:
         assert normalize("") == ""
 
+    # --- Quantity stripping ---
+
+    def test_strips_number_and_unit(self) -> None:
+        assert normalize("2 cups of flour") == "flour"
+
+    def test_strips_metric_weight(self) -> None:
+        assert normalize("500g chicken breast") == "chicken breast"
+
+    def test_strips_fraction_and_unit(self) -> None:
+        assert normalize("1/2 teaspoon salt") == "salt"
+
+    def test_strips_cloves(self) -> None:
+        assert normalize("3 cloves garlic") == "garlic"
+
+    def test_strips_a_handful_of(self) -> None:
+        assert normalize("a handful of spinach") == "spinach"
+
+    def test_strips_some(self) -> None:
+        assert normalize("some olive oil") == "olive oil"
+
+    def test_quantity_then_prep_prefix(self) -> None:
+        # Quantity stripped first, then prep prefix
+        assert normalize("2 cups of fresh spinach") == "spinach"
+
 
 # ---------------------------------------------------------------------------
 # is_duplicate

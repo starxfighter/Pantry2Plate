@@ -62,6 +62,37 @@ STAPLES: frozenset[str] = frozenset(
     }
 )
 
+# Strips leading quantity expressions such as "2 cups of", "500g", "1/2 teaspoon",
+# "a handful of", or "some" from the start of an ingredient string.
+_QUANTITY_PATTERN = re.compile(
+    r"""
+    ^\s*
+    (?:
+        # "a/an" + unit + optional "of"
+        an?\s+
+        (?:cups?|tablespoons?|tbsps?|tbsp|teaspoons?|tsps?|tsp|
+           handfuls?|pinch(?:es)?|dashes?|slices?|pieces?|
+           heads?|bunches?|cans?|stalks?|sprigs?|cloves?)
+        \s*(?:of\s+)?
+    |
+        # "some"
+        some\s+
+    |
+        # number (integer, decimal, or fraction) + optional unit + optional "of"
+        (?:\d[\d\s./]*)
+        \s*
+        (?:grams?|g|kilograms?|kg|milliliters?|ml|liters?|l|
+           ounces?|oz|pounds?|lbs?|lb|
+           cups?|tablespoons?|tbsps?|tbsp|teaspoons?|tsps?|tsp|
+           cloves?|slices?|sprigs?|handfuls?|pinch(?:es)?|dashes?|
+           cans?|bunches?|heads?|stalks?|pieces?)?
+        \s*
+        (?:of\s+)?
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
 # Prefixes stripped during normalisation.  Sorted longest-first so the regex
 # alternation matches greedily (e.g. "finely chopped" before "chopped").
 _PREFIX_PATTERN = re.compile(
@@ -115,12 +146,15 @@ def normalize(ingredient: str) -> str:
 
     1. Strip leading and trailing whitespace.
     2. Convert to lowercase.
-    3. Remove common preparation-state prefixes (e.g. ``"fresh"``,
+    3. Remove leading quantity expressions: numbers, units, and connective
+       words such as ``"2 cups of"``, ``"500g"``, ``"1/2 teaspoon"``,
+       ``"a handful of"``, or ``"some"``.
+    4. Remove common preparation-state prefixes (e.g. ``"fresh"``,
        ``"dried"``, ``"chopped"``, ``"minced"``, ``"sliced"``, ``"diced"``),
        including optional adverb qualifiers such as ``"finely"`` or
        ``"roughly"``.
-    4. Collapse any run of multiple spaces to a single space.
-    5. Strip again to remove any residual leading/trailing whitespace.
+    5. Collapse any run of multiple spaces to a single space.
+    6. Strip again to remove any residual leading/trailing whitespace.
 
     Args:
         ingredient: Raw ingredient string, e.g. ``"Finely chopped Onion"``.
@@ -139,6 +173,7 @@ def normalize(ingredient: str) -> str:
         'parsley'
     """
     text = ingredient.strip().lower()
+    text = _QUANTITY_PATTERN.sub("", text)
     text = _PREFIX_PATTERN.sub("", text)
     text = _MULTI_SPACE.sub(" ", text)
     return text.strip()
