@@ -192,6 +192,31 @@ class TestSearchEndpoint:
         )
         assert response.status_code == 422
 
+    async def test_search_empty_session_id_returns_422(self, client: AsyncClient) -> None:
+        """An empty session_id should be rejected by Pydantic validation."""
+        response = await client.post(
+            "/search",
+            json={"raw_input": "chicken", "session_id": "", "filters": {}},
+        )
+        assert response.status_code == 422
+
+    async def test_search_timeout_emits_error_event(self, client: AsyncClient) -> None:
+        """When the graph times out an error SSE event should be emitted."""
+
+        async def slow_astream(*args, **kwargs):
+            raise TimeoutError("pipeline timed out")
+            yield  # make it a generator
+
+        with patch("backend.main.graph.astream", side_effect=slow_astream):
+            response = await client.post(
+                "/search",
+                json={"raw_input": "chicken", "session_id": "timeout-session", "filters": {}},
+            )
+
+        assert response.status_code == 200
+        assert "event: error" in response.text
+        assert "timed out" in response.text
+
     async def test_search_streams_sse_events(self, client: AsyncClient) -> None:
         """POST /search should return a text/event-stream response."""
         scored = [_make_scored_recipe("Garlic Chicken", 85.0)]

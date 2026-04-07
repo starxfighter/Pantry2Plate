@@ -17,6 +17,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -39,6 +40,15 @@ from backend.utils.log_config import get_logger
 from backend.utils.mcp_manager import MCPServerManager
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Hard cap on total pipeline execution time per request.  If the graph does
+# not complete within this many seconds an SSE error event is emitted and the
+# stream closes.  Configurable via SEARCH_TIMEOUT_SECONDS env var.
+_SEARCH_TIMEOUT: int = int(os.getenv("SEARCH_TIMEOUT_SECONDS", "120"))
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -139,7 +149,7 @@ class SearchRequest(BaseModel):
 
     raw_input: str = Field(..., max_length=2000)
     filters: dict = {}
-    session_id: str
+    session_id: str = Field(..., min_length=1, max_length=128)
 
 
 # ---------------------------------------------------------------------------
@@ -189,48 +199,60 @@ async def _search_generator(request: SearchRequest) -> AsyncGenerator[dict, None
     config = {"configurable": {"thread_id": request.session_id}}
 
     try:
-        async for chunk in graph.astream(state, config=config):
-            # Each chunk is {node_name: state_snapshot}.
-            node_name = next(iter(chunk.keys()))
-            node_state: AgentState = chunk[node_name]
-            step: str = node_state.get("current_step", "")
-            scored = node_state.get("scored_recipes") or []
+        async with asyncio.timeout(_SEARCH_TIMEOUT):
+            async for chunk in graph.astream(state, config=config):
+                # Each chunk is {node_name: state_snapshot}.
+                node_name = next(iter(chunk.keys()))
+                node_state: AgentState = chunk[node_name]
+                step: str = node_state.get("current_step", "")
+                scored = node_state.get("scored_recipes") or []
+
+                logger.info(
+                    '{"event": "sse_chunk", "node": "%s", "step": "%s",'
+                    ' "scored": %d, "search_results": %d, "tavily": %d, "spoonacular": %d}',
+                    node_name, step, len(scored),
+                    len(node_state.get("search_results") or []),
+                    node_state.get("tavily_recipe_count", 0),
+                    node_state.get("spoonacular_recipe_count", 0),
+                )
+
+                payload: dict = {
+                    "step": step,
+                    "data": {"scored_recipes": scored} if scored else {},
+                }
+                yield {"event": "message", "data": json.dumps(payload)}
+
+            # After the stream completes, read the final checkpointed state.
+            # The checkpoint is the authoritative source for both the LangSmith
+            # trace URL and the complete scored_recipes list.
+            final = await graph.aget_state(config)
+            run_url: str | None = None
+            final_recipes: list = []
+            if final and final.values:
+                run_url = final.values.get("langsmith_run_url")
+                final_recipes = final.values.get("scored_recipes") or []
 
             logger.info(
-                '{"event": "sse_chunk", "node": "%s", "step": "%s",'
-                ' "scored": %d, "search_results": %d, "tavily": %d, "spoonacular": %d}',
-                node_name, step, len(scored),
-                len(node_state.get("search_results") or []),
-                node_state.get("tavily_recipe_count", 0),
-                node_state.get("spoonacular_recipe_count", 0),
+                '{"event": "done_checkpoint", "session_id": "%s", "recipe_count": %d}',
+                request.session_id, len(final_recipes),
             )
 
-            payload: dict = {
-                "step": step,
-                "data": {"scored_recipes": scored} if scored else {},
+            yield {
+                "event": "done",
+                "data": json.dumps(
+                    {"langsmith_run_url": run_url, "scored_recipes": final_recipes}
+                ),
             }
-            yield {"event": "message", "data": json.dumps(payload)}
 
-        # After the stream completes, read the final checkpointed state.
-        # The checkpoint is the authoritative source for both the LangSmith
-        # trace URL and the complete scored_recipes list.
-        final = await graph.aget_state(config)
-        run_url: str | None = None
-        final_recipes: list = []
-        if final and final.values:
-            run_url = final.values.get("langsmith_run_url")
-            final_recipes = final.values.get("scored_recipes") or []
-
-        logger.info(
-            '{"event": "done_checkpoint", "session_id": "%s", "recipe_count": %d}',
-            request.session_id, len(final_recipes),
+    except TimeoutError:
+        logger.error(
+            '{"event": "search_timeout", "session_id": "%s", "timeout_s": %d}',
+            request.session_id,
+            _SEARCH_TIMEOUT,
         )
-
         yield {
-            "event": "done",
-            "data": json.dumps(
-                {"langsmith_run_url": run_url, "scored_recipes": final_recipes}
-            ),
+            "event": "error",
+            "data": json.dumps({"message": f"Request timed out after {_SEARCH_TIMEOUT}s"}),
         }
 
     except Exception as exc:

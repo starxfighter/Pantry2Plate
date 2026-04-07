@@ -1061,7 +1061,8 @@
     // ------------------------------------------------------------------ //
     // Config                                                                //
     // ------------------------------------------------------------------ //
-    const API_BASE = 'http://localhost:8000';
+    const API_BASE  = 'http://localhost:8000';
+    const MAX_PILLS = 30; // maximum number of ingredient pills allowed
 
     // ------------------------------------------------------------------ //
     // DOM refs                                                              //
@@ -1123,6 +1124,43 @@
     let filterCookTime = 0;         // 0 = no limit
 
     // ------------------------------------------------------------------ //
+    // Filter persistence                                                    //
+    // ------------------------------------------------------------------ //
+    const FILTER_KEY = 'pantry2plate_filters';
+
+    function saveFilters() {
+      localStorage.setItem(FILTER_KEY, JSON.stringify({
+        cuisine:  filterCuisine,
+        dietary:  [...filterDietary],
+        cookTime: filterCookTime,
+      }));
+    }
+
+    function restoreFilters() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(FILTER_KEY) || '{}');
+        if (saved.cuisine) {
+          filterCuisine = saved.cuisine;
+          document.querySelectorAll('.pill-toggle').forEach(b =>
+            b.classList.toggle('active', b.dataset.cuisine === filterCuisine)
+          );
+        }
+        if (Array.isArray(saved.dietary)) {
+          saved.dietary.forEach(v => {
+            filterDietary.add(v);
+            const cb = document.querySelector(`.dietary-check[value="${CSS.escape(v)}"]`);
+            if (cb) cb.checked = true;
+          });
+        }
+        if (saved.cookTime > 0) {
+          filterCookTime = saved.cookTime;
+          cookTimeSlider.value    = filterCookTime;
+          cookTimeLabelEl.textContent = `Up to ${filterCookTime} min`;
+        }
+      } catch { /* corrupt localStorage — silently ignore */ }
+    }
+
+    // ------------------------------------------------------------------ //
     // Ingredient pill management                                            //
     // ------------------------------------------------------------------ //
     function normalise(s) {
@@ -1134,6 +1172,7 @@
       const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
       let changed = false;
       for (const part of parts) {
+        if (ingredients.length >= MAX_PILLS) break;
         if (part && !ingredients.some(i => normalise(i) === normalise(part))) {
           ingredients.push(part);
           changed = true;
@@ -1167,7 +1206,9 @@
         pillContainer.appendChild(pill);
       });
       pillContainer.hidden  = false;
-      countEl.textContent   = `${ingredients.length} ingredient${ingredients.length !== 1 ? 's' : ''} detected`;
+      countEl.textContent   = ingredients.length >= MAX_PILLS
+        ? `${ingredients.length} ingredients (limit reached)`
+        : `${ingredients.length} ingredient${ingredients.length !== 1 ? 's' : ''} detected`;
       countEl.hidden        = false;
       clearPantryBtn.hidden = false;
     }
@@ -1538,6 +1579,7 @@
         document.querySelectorAll('.pill-toggle').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         filterCuisine = btn.dataset.cuisine;
+        saveFilters();
       });
     });
 
@@ -1546,6 +1588,7 @@
       cb.addEventListener('change', () => {
         if (cb.checked) filterDietary.add(cb.value);
         else filterDietary.delete(cb.value);
+        saveFilters();
       });
     });
 
@@ -1555,6 +1598,7 @@
     cookTimeSlider.addEventListener('input', () => {
       filterCookTime = parseInt(cookTimeSlider.value, 10);
       cookTimeLabelEl.textContent = filterCookTime === 0 ? 'Any' : `Up to ${filterCookTime} min`;
+      saveFilters();
     });
 
     // ------------------------------------------------------------------ //
@@ -1598,7 +1642,8 @@
       }
     }
 
-    // Restore pantry chips from server on page load
+    // Restore state on page load
+    restoreFilters();
     restorePantry();
     checkServerHealth();
 
