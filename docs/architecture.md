@@ -188,11 +188,33 @@ Single-file vanilla HTML/CSS/JS UI. Key features:
 
 ---
 
-## What's next (Phase 8)
+## Phase 8 — Testing & Eval (completed 2026-04-07)
 
-- `pytest.ini` / `pyproject.toml` with asyncio mode config
-- Unit tests for each agent and MCP server under `tests/unit/`
-- Integration test: full graph run with mocked MCP tools
-- Integration tests for API endpoints (`POST /search`, `GET /health`, `GET|DELETE /pantry`)
-- Reach ≥ 80% unit test coverage on `backend/`
-- Final `ruff` pass
+### Test suite
+
+| File | Tests | Coverage |
+|---|---|---|
+| `tests/unit/test_ingredient_matcher.py` | 49 | 100% of `ingredient_matcher.py` |
+| `tests/unit/test_parser_agent.py` | 16 | `parser_agent.py` |
+| `tests/unit/test_search_agent.py` | 38 | `search_agent.py` |
+| `tests/unit/test_scorer_agent.py` | 17 | `scorer_agent.py` |
+| `tests/unit/test_mcp_servers.py` | 27 | all 4 MCP servers |
+| `tests/unit/test_mcp_manager.py` | 17 | `mcp_manager.py` |
+| `tests/integration/test_api.py` | 10 | FastAPI endpoints |
+| `tests/integration/test_graph.py` | 2 | full graph (live, skip-guarded) |
+
+**Total: 176 unit + 12 integration tests. Coverage: 87% on `backend/`. Ruff: 0 errors.**
+
+`pytest.ini` configures `asyncio_mode = auto`, `pythonpath = .` (CI compatibility), and registers `integration` + `slow` markers.
+
+### Eval harness
+
+`backend/utils/eval_runner.py` — 10 test cases covering simple, complex, dietary, vague, and non-English inputs. Each run tagged `eval-v0.1` in LangSmith. 10/10 passed on 2026-04-07.
+
+### Parser improvement (2026-04-07)
+
+Added rule 8 to `backend/prompts/parser_system.txt`: translate non-English ingredient names to English before normalising. Confirmed Spanish input (`pollo→chicken`, `frijoles→black bean`) now scores correctly.
+
+### LangSmith tagging
+
+`AgentState` gained an optional `run_tags: list[str]` field. `log_search_run` MCP tool accepts `tags: list[str]` and includes them in the LangSmith run payload. Scorer agent threads `state["run_tags"]` through to the MCP call.

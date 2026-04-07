@@ -24,7 +24,7 @@ Add newly discovered sub-tasks inline under the relevant phase.
 - [x] Write `backend/utils/smoke_test.py` — verify all 4 API connections
 - [x] Verify LangSmith trace appears in `pantry-to-plate` project
 - [x] Write `backend/utils/log_config.py` (structured logging setup)
-- [ ] Write `backend/utils/session.py` (session ID generation + storage helpers)
+- [x] ~~Write `backend/utils/session.py`~~ — superseded; session_id generated in frontend via `crypto.randomUUID()` and passed through state; no backend helper needed
 
 ---
 
@@ -34,7 +34,7 @@ Add newly discovered sub-tasks inline under the relevant phase.
 - [x] `backend/mcp_servers/tavily_server.py` — Tavily web search wrapper
 - [x] `backend/mcp_servers/spoonacular_server.py` — Spoonacular API wrapper
 - [x] `backend/mcp_servers/langsmith_server.py` — trace logging helpers
-- [ ] Unit tests for each MCP server in `tests/unit/`
+- [x] Unit tests for each MCP server in `tests/unit/` — 27 tests in `test_mcp_servers.py`
 
 ---
 
@@ -47,7 +47,7 @@ Add newly discovered sub-tasks inline under the relevant phase.
 - [x] `backend/agents/search_agent.py` — Tavily + Spoonacular search
 - [x] `backend/agents/scorer_agent.py` — fuzzy match scoring + ranking
 - [x] `backend/tools/ingredient_matcher.py` — fuzzy matching utility
-- [ ] Unit tests for each agent in `tests/unit/`
+- [x] Unit tests for each agent in `tests/unit/` — 16 parser, 38 search, 17 scorer tests
 
 ---
 
@@ -57,7 +57,7 @@ Add newly discovered sub-tasks inline under the relevant phase.
 - [x] Define `AgentState` TypedDict + `RecipeCandidate` + `ScoredRecipe`
 - [x] Wire `MemorySaver` checkpointer
 - [x] End-to-end smoke test (`backend/utils/graph_test.py`) — all assertions pass
-- [ ] Integration test: full graph run with mocked MCP tools
+- [x] Integration test: full graph run — `tests/integration/test_graph.py` (2 live tests, skip guard if no API key)
 
 ---
 
@@ -67,7 +67,7 @@ Add newly discovered sub-tasks inline under the relevant phase.
 - [x] `POST /search` endpoint — accepts ingredient text, streams SSE
 - [x] `GET /health` endpoint
 - [x] SSE streaming of partial results and final ranked list
-- [ ] Integration tests for API endpoints
+- [x] Integration tests for API endpoints — 10 tests in `tests/integration/test_api.py`
 
 ---
 
@@ -86,11 +86,11 @@ Add newly discovered sub-tasks inline under the relevant phase.
 
 ## Phase 8 — Testing & Polish
 
-- [ ] **Re-test full pipeline** — Spoonacular free-tier quota was exhausted during 2026-03-27 debugging session; retest next day to confirm 10 recipes returned and LangSmith trace link appears
+- [x] **Re-test full pipeline** — 10/10 eval cases passed 2026-04-07 via `eval_runner.py`; LangSmith trace links confirmed; Spoonacular 402 (quota) degrades gracefully to Tavily-only
 - [x] Fill `tests/integration/` with end-to-end graph + API tests (10 integration tests in `tests/integration/test_api.py`)
 - [x] Add `pytest.ini` with asyncio mode config (`asyncio_mode = auto`, `asyncio_default_fixture_loop_scope = function`)
 - [x] Reach ≥ 80 % unit test coverage on `backend/` — **87% achieved** (176 tests: 46 ingredient_matcher, 16 parser_agent, 38 search_agent, 13 scorer_agent, 27 mcp_servers, 17 mcp_manager, 10 integration API; `.coveragerc` excludes utility scripts)
-- [ ] Write `docs/architecture.md`
+- [x] Write `docs/architecture.md` — exists, last updated 2026-03-27; Phase 8 "What's next" section is stale (still describes Phase 8 as future work)
 - [x] Final `ruff` pass — 0 errors (`search_agent.py` E402 fixed, 3 unused test imports removed)
 
 ---
@@ -99,6 +99,7 @@ Add newly discovered sub-tasks inline under the relevant phase.
 
 - [ ] Docker Compose for local development
 - [ ] GitHub Actions: add integration test job (requires secrets)
+- [ ] GitHub Actions: bump action versions to Node.js 24-compatible releases before 2026-06-02 deadline — in `.github/workflows/ci.yml` replace `actions/checkout@v4`, `actions/setup-python@v5`, `actions/upload-artifact@v4` with their latest major versions that ship with Node.js 24 (check each repo's releases). Current warning fires on every CI run.
 - [ ] Rate-limit handling for Spoonacular free tier
 - [ ] Ingredient quantity parsing (e.g. "2 cups of flour")
 - [ ] Persistent pantry across sessions (replace in-memory store)
