@@ -471,6 +471,10 @@ class SearchAgent(BaseAgent):
         Creates its own ``MultiServerMCPClient`` so it can run concurrently
         with ``_search_tavily`` without sharing MCP connections.
 
+        Respects the ``SPOONACULAR_ENABLED`` env var (default ``true``).
+        Set to ``false`` to skip Spoonacular entirely when the free-tier
+        daily quota is known to be exhausted.
+
         Args:
             ingredients: Normalised ingredient list from the parser agent.
 
@@ -481,6 +485,12 @@ class SearchAgent(BaseAgent):
             Exception: Any error from the MCP tool calls; caught by
                 ``asyncio.gather`` in ``run()``.
         """
+        if os.getenv("SPOONACULAR_ENABLED", "true").lower() == "false":
+            _log.info(
+                '{"event": "spoonacular_skipped", "reason": "SPOONACULAR_ENABLED=false"}'
+            )
+            return []
+
         _spoonacular_config = {
             "spoonacular": _MCP_CONFIG["spoonacular"],
         }
@@ -503,16 +513,35 @@ class SearchAgent(BaseAgent):
                 return []
 
             # Fetch details sequentially — concurrent subprocess reads hang on Windows.
+            # Bail early if 3 consecutive fetches return empty (quota exhausted or
+            # persistent API error — further calls will not recover).
             details = []
+            consecutive_empty = 0
             for c in candidates:
                 if not c.get("id"):
                     continue
                 try:
                     detail_raw = await detail_tool.ainvoke({"recipe_id": c["id"]})
                     detail = _unwrap_tool_list(detail_raw)
-                    details.append(detail[0] if detail else {})
+                    result = detail[0] if detail else {}
+                    details.append(result)
+                    if result:
+                        consecutive_empty = 0
+                    else:
+                        consecutive_empty += 1
                 except Exception as exc:
                     details.append(exc)
+                    consecutive_empty += 1
+
+                if consecutive_empty >= 3:
+                    _log.warning(
+                        '{"event": "spoonacular_detail_bail", "consecutive_empty": %d,'
+                        ' "fetched": %d, "remaining": %d}',
+                        consecutive_empty,
+                        len(details),
+                        len(candidates) - len(details),
+                    )
+                    break
 
         results: list[dict] = []
         for detail in details:
