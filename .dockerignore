@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Environment & secrets
+.env
+
+# Tests (not needed at runtime)
+tests/
+
+# Version control
+.git/
+.gitignore
+
+# Dev tooling
+.claude/
+.coveragerc
+pytest.ini
+coverage.xml
+
+# Docs
+docs/
+*.md
