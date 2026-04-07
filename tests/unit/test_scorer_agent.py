@@ -6,7 +6,7 @@ patched so no MCP/LLM calls occur.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -168,6 +168,93 @@ class TestScorerAgentRun:
         recipe = result["scored_recipes"][0]
         assert "salt" in recipe["ingredients_staple"]
         assert "salt" not in recipe["ingredients_missing"]
+
+    async def test_score_math(self, state: AgentState) -> None:
+        """4 non-staple recipe ingredients, pantry has 3 → match_score == 75.0."""
+        state["parsed_ingredients"] = ["chicken", "broccoli", "carrots"]
+        state["search_results"] = [
+            _make_recipe(
+                "Chicken Pasta",
+                "https://a.com/1",
+                ["chicken", "broccoli", "carrots", "pasta"],
+            )
+        ]
+
+        agent = ScorerAgent()
+        with patch.object(agent, "_log_to_langsmith", AsyncMock(return_value=None)):
+            result = await agent.run(state)
+
+        assert result["scored_recipes"][0]["match_score"] == 75.0
+
+    async def test_sort_descending(self, state: AgentState) -> None:
+        """Recipes with scores 90.0 and 60.0 must appear in that order."""
+        pantry = [
+            "chicken", "broccoli", "carrots", "celery",
+            "pasta", "tomato", "mushroom", "spinach", "zucchini",
+        ]
+        state["parsed_ingredients"] = pantry
+
+        # 9 of 10 pantry-matched → 90.0
+        recipe_90_ingredients = pantry + ["artichoke"]
+        # 6 of 10 pantry-matched → 60.0
+        recipe_60_ingredients = pantry[:6] + ["artichoke", "turnip", "rutabaga", "parsnip"]
+
+        state["search_results"] = [
+            _make_recipe("Low Match", "https://a.com/1", recipe_60_ingredients),
+            _make_recipe("High Match", "https://a.com/2", recipe_90_ingredients),
+        ]
+
+        agent = ScorerAgent()
+        with patch.object(agent, "_log_to_langsmith", AsyncMock(return_value=None)):
+            result = await agent.run(state)
+
+        recipes = result["scored_recipes"]
+        assert recipes[0]["match_score"] == 90.0
+        assert recipes[1]["match_score"] == 60.0
+
+    async def test_langsmith_logged(self, state: AgentState) -> None:
+        """log_search_run MCP tool must be called exactly once per run."""
+        state["search_results"] = [
+            _make_recipe("Chicken Pasta", "https://a.com/1", ["chicken", "pasta"])
+        ]
+
+        log_tool = AsyncMock(return_value="share-token-123")
+        log_tool.name = "log_search_run"
+        url_tool = AsyncMock(return_value="https://smith.langchain.com/trace/abc")
+        url_tool.name = "get_run_url"
+
+        mock_session = AsyncMock()
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_client = MagicMock()
+        mock_client.session.return_value = mock_cm
+
+        with (
+            patch("backend.agents.scorer_agent.MultiServerMCPClient", return_value=mock_client),
+            patch(
+                "backend.agents.scorer_agent.load_mcp_tools",
+                AsyncMock(return_value=[log_tool, url_tool]),
+            ),
+        ):
+            agent = ScorerAgent()
+            await agent.run(state)
+
+        log_tool.ainvoke.assert_called_once()
+
+    async def test_top_n_slice(self, state: AgentState, monkeypatch: pytest.MonkeyPatch) -> None:
+        """12 candidates with TOP_RECIPE_COUNT=10 must yield exactly 10 results."""
+        monkeypatch.setenv("TOP_RECIPE_COUNT", "10")
+        state["search_results"] = [
+            _make_recipe(f"Recipe {i}", f"https://a.com/{i}", ["chicken"])
+            for i in range(12)
+        ]
+
+        agent = ScorerAgent()
+        with patch.object(agent, "_log_to_langsmith", AsyncMock(return_value=None)):
+            result = await agent.run(state)
+
+        assert len(result["scored_recipes"]) == 10
 
     async def test_langsmith_error_does_not_crash(self, state: AgentState) -> None:
         """MCP failure inside _log_to_langsmith must not crash run()."""

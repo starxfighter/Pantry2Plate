@@ -91,6 +91,10 @@ class TestIsDuplicate:
         # fuzz.ratio("garlic", "garlic") == 100 — well above 85
         assert is_duplicate("garlic", "garlic") is True
 
+    def test_is_duplicate_above_threshold(self) -> None:
+        # fuzz.ratio("chicken breast", "chicken breasts") ≈ 96 — above default 85
+        assert is_duplicate("chicken breast", "chicken breasts") is True
+
     def test_empty_strings(self) -> None:
         assert is_duplicate("", "") is True
 
@@ -202,3 +206,20 @@ class TestScoreIngredientMatch:
         # At most 2 decimal places
         if "." in score_str:
             assert len(score_str.split(".")[1]) <= 2
+
+    def test_score_none_match(self) -> None:
+        # Empty pantry, only non-staple ingredients → all in missing, score 0.0
+        result = score_ingredient_match([], ["chicken", "broccoli", "pasta", "salmon"])
+        assert result["score"] == 0.0
+        assert set(result["missing"]) == {"chicken", "broccoli", "pasta", "salmon"}
+        assert result["have"] == []
+        assert result["staples"] == []
+
+    def test_score_partial_match(self) -> None:
+        # 4 non-staple ingredients, pantry has 2 → 2/4 * 100 = 50.0
+        pantry = ["chicken", "broccoli"]
+        recipe = ["chicken", "broccoli", "salmon", "pasta"]
+        result = score_ingredient_match(pantry, recipe)
+        assert result["score"] == 50.0
+        assert set(result["have"]) == {"chicken", "broccoli"}
+        assert set(result["missing"]) == {"salmon", "pasta"}
