@@ -77,6 +77,7 @@ def log_search_run(
     inputs: dict,
     outputs: dict,
     latency_ms: float,
+    tags: list[str] | None = None,
 ) -> str:
     """Record a completed pipeline search run as a LangSmith trace.
 
@@ -112,6 +113,7 @@ def log_search_run(
             "outputs": outputs,
             "extra": {"session_id": session_id, "latency_ms": latency_ms},
             "session_name": project,
+            "tags": tags or [],
         }
 
         with httpx.Client(timeout=10.0) as client:

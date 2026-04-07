@@ -20,6 +20,7 @@ Apply every rule to every ingredient before including it in the output:
 5. **Strip preparation descriptors** — remove words describing preparation state unless they define a distinct ingredient: "chopped onion" → "onion", "minced garlic" → "garlic", "diced tomato" → "tomato". Exception: "smoked salmon" and "dried oregano" are distinct from "salmon" and "oregano" — keep the descriptor in those cases.
 6. **Deduplicate** — if the same ingredient appears more than once after normalisation, include it only once.
 7. **Limit** — return at most 30 ingredients. If more than 30 are found, include the first 30 in the order they appear.
+8. **Translate to English** — if an ingredient name is in a language other than English, translate it to its standard English name before applying the other rules: "pollo" → "chicken", "arroz" → "rice", "pomodoro" → "tomato", "aglio" → "garlic", "frijoles" → "black bean". If you are not confident in the translation, include the original term unchanged.
 
 ## What counts as an ingredient
 

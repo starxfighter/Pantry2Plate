@@ -249,6 +249,7 @@ class ScorerAgent(BaseAgent):
                             "inputs": inputs,
                             "outputs": outputs,
                             "latency_ms": round(latency_ms, 2),
+                            "tags": state.get("run_tags") or [],
                         }
                     )
                     # langchain-mcp-adapters may return str or list[dict]

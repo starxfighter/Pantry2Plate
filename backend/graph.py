@@ -133,6 +133,9 @@ class AgentState(TypedDict):
     scored_recipes: list[dict]
     langsmith_run_url: Optional[str]
 
+    # --- Observability / eval ---
+    run_tags: Optional[list[str]]
+
     # --- Graph metadata ---
     current_step: str
     start_time: float
