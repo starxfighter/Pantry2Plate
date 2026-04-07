@@ -21,6 +21,8 @@ _DEFAULTS = {
     "SPOONACULAR_API_KEY": "test-spoonacular-key",
     "LANGSMITH_PROJECT": "pantry-to-plate-test",
     "LANGCHAIN_TRACING_V2": "false",
+    # Use in-memory SQLite for pantry so tests never touch the filesystem.
+    "PANTRY_DB_PATH": ":memory:",
 }
 
 for _key, _val in _DEFAULTS.items():

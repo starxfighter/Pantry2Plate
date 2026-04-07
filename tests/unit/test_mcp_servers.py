@@ -16,7 +16,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 from backend.mcp_servers.pantry_server import (  # noqa: E402
-    _store,
+    _conn,
     clear_pantry,
     get_pantry,
     save_pantry,
@@ -25,10 +25,12 @@ from backend.mcp_servers.pantry_server import (  # noqa: E402
 
 @pytest.fixture(autouse=False)
 def clear_pantry_store() -> None:
-    """Ensure the in-memory pantry store is empty before each test."""
-    _store.clear()
+    """Ensure the pantry table is empty before and after each test."""
+    _conn.execute("DELETE FROM pantry")
+    _conn.commit()
     yield
-    _store.clear()
+    _conn.execute("DELETE FROM pantry")
+    _conn.commit()
 
 
 class TestPantryServer:
