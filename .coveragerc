@@ -1,0 +1,15 @@
+[run]
+source = backend
+
+[report]
+# Exclude manual utility/smoke-test scripts that are not part of the
+# production code and are not intended to be covered by automated tests.
+omit =
+    backend/utils/graph_test.py
+    backend/utils/smoke_test.py
+
+exclude_lines =
+    # Standard pragmas
+    pragma: no cover
+    # Script entry points
+    if __name__ == .__main__.:

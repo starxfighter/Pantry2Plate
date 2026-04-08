@@ -1,0 +1,458 @@
+"""Unit tests for backend/agents/search_agent.py.
+
+Tests pure helper functions directly, and SearchAgent.run() with
+_search_tavily/_search_spoonacular patched so no MCP/LLM calls occur.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from backend.agents.search_agent import (
+    SearchAgent,
+    _apply_filters,
+    _build_query,
+    _deduplicate,
+    _is_duplicate,
+    _normalise_recipe,
+    _parse_recipe_json,
+    _source_from_url,
+    _unwrap_tool_list,
+)
+from backend.graph import AgentState
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def state() -> AgentState:
+    return AgentState(
+        session_id="test-session",
+        raw_input="chicken garlic lemon recipe",
+        filters={},
+        parsed_ingredients=["chicken", "garlic", "lemon"],
+        parse_error=None,
+        search_results=[],
+        search_error=None,
+        tavily_recipe_count=0,
+        spoonacular_recipe_count=0,
+        scored_recipes=[],
+        langsmith_run_url=None,
+        current_step="searching",
+        start_time=0.0,
+    )
+
+
+@pytest.fixture
+def sample_recipe() -> dict:
+    return {
+        "name": "Garlic Chicken",
+        "url": "https://example.com/garlic-chicken",
+        "source": "Example",
+        "ingredient_list": ["chicken", "garlic", "olive oil"],
+        "steps_summary": "Season chicken. Cook with garlic.",
+        "cook_time_minutes": 30,
+        "cuisine": "Italian",
+        "dietary_tags": [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# _build_query
+# ---------------------------------------------------------------------------
+
+
+class TestBuildQuery:
+    def test_basic_query(self) -> None:
+        result = _build_query(["chicken", "garlic", "lemon"])
+        assert result == "chicken garlic lemon recipe"
+
+    def test_caps_at_five_ingredients(self) -> None:
+        ingredients = ["a", "b", "c", "d", "e", "f", "g"]
+        result = _build_query(ingredients)
+        assert result == "a b c d e recipe"
+
+    def test_empty_list(self) -> None:
+        assert _build_query([]) == " recipe"
+
+    def test_single_ingredient(self) -> None:
+        assert _build_query(["salmon"]) == "salmon recipe"
+
+
+# ---------------------------------------------------------------------------
+# _is_duplicate
+# ---------------------------------------------------------------------------
+
+
+class TestIsDuplicateRecipe:
+    def test_same_url(self) -> None:
+        a = {"url": "https://example.com/pasta", "name": "Pasta"}
+        b = {"url": "https://example.com/pasta", "name": "Pasta Dish"}
+        assert _is_duplicate(a, b, threshold=85) is True
+
+    def test_same_url_trailing_slash(self) -> None:
+        a = {"url": "https://example.com/pasta/", "name": "Pasta"}
+        b = {"url": "https://example.com/pasta", "name": "Pasta Dish"}
+        assert _is_duplicate(a, b, threshold=85) is True
+
+    def test_different_url_different_name(self) -> None:
+        a = {"url": "https://example.com/pasta", "name": "Pasta"}
+        b = {"url": "https://other.com/soup", "name": "Soup"}
+        assert _is_duplicate(a, b, threshold=85) is False
+
+    def test_similar_names_above_threshold(self) -> None:
+        a = {"url": "", "name": "Garlic Butter Chicken"}
+        b = {"url": "", "name": "Garlic Butter Chicken Recipe"}
+        assert _is_duplicate(a, b, threshold=85) is True
+
+    def test_empty_url_and_name(self) -> None:
+        a = {"url": "", "name": ""}
+        b = {"url": "", "name": ""}
+        # Empty names → no match
+        assert _is_duplicate(a, b, threshold=85) is False
+
+
+# ---------------------------------------------------------------------------
+# _deduplicate
+# ---------------------------------------------------------------------------
+
+
+class TestDeduplicate:
+    def test_removes_url_duplicate(self) -> None:
+        url = "https://example.com/chicken"
+        recipes = [
+            {"url": url, "name": "Chicken A"},
+            {"url": url, "name": "Chicken B"},
+        ]
+        result = _deduplicate(recipes, threshold=85)
+        assert len(result) == 1
+        assert result[0]["name"] == "Chicken A"
+
+    def test_keeps_unique_recipes(self) -> None:
+        recipes = [
+            {"url": "https://a.com/1", "name": "Garlic Chicken"},
+            {"url": "https://b.com/2", "name": "Beef Stew"},
+        ]
+        assert len(_deduplicate(recipes, threshold=85)) == 2
+
+    def test_empty_list(self) -> None:
+        assert _deduplicate([], threshold=85) == []
+
+    def test_preserves_order(self) -> None:
+        recipes = [
+            {"url": "https://a.com/1", "name": "First"},
+            {"url": "https://b.com/2", "name": "Second"},
+            {"url": "https://c.com/3", "name": "Third"},
+        ]
+        result = _deduplicate(recipes, threshold=85)
+        assert [r["name"] for r in result] == ["First", "Second", "Third"]
+
+
+# ---------------------------------------------------------------------------
+# _apply_filters
+# ---------------------------------------------------------------------------
+
+
+class TestApplyFilters:
+    def test_no_filters_returns_all(self, sample_recipe: dict) -> None:
+        assert _apply_filters([sample_recipe], {}) == [sample_recipe]
+
+    def test_cuisine_filter_match(self, sample_recipe: dict) -> None:
+        result = _apply_filters([sample_recipe], {"cuisine": "italian"})
+        assert len(result) == 1
+
+    def test_cuisine_filter_no_match(self, sample_recipe: dict) -> None:
+        result = _apply_filters([sample_recipe], {"cuisine": "mexican"})
+        assert result == []
+
+    def test_dietary_filter_match(self) -> None:
+        recipe = {"dietary_tags": ["vegetarian"], "cuisine": None, "cook_time_minutes": None}
+        result = _apply_filters([recipe], {"dietary": "vegetarian"})
+        assert len(result) == 1
+
+    def test_dietary_filter_no_match(self) -> None:
+        recipe = {"dietary_tags": ["vegan"], "cuisine": None, "cook_time_minutes": None}
+        result = _apply_filters([recipe], {"dietary": "gluten-free"})
+        assert result == []
+
+    def test_max_cook_time_pass(self, sample_recipe: dict) -> None:
+        # cook_time_minutes=30, max=60 → include
+        result = _apply_filters([sample_recipe], {"max_cook_time_minutes": 60})
+        assert len(result) == 1
+
+    def test_max_cook_time_fail(self, sample_recipe: dict) -> None:
+        # cook_time_minutes=30, max=20 → exclude
+        result = _apply_filters([sample_recipe], {"max_cook_time_minutes": 20})
+        assert result == []
+
+    def test_null_cook_time_kept(self) -> None:
+        recipe = {"cook_time_minutes": None, "cuisine": None, "dietary_tags": []}
+        result = _apply_filters([recipe], {"max_cook_time_minutes": 15})
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# _normalise_recipe
+# ---------------------------------------------------------------------------
+
+
+class TestNormaliseRecipe:
+    def test_standard_shape(self, sample_recipe: dict) -> None:
+        result = _normalise_recipe(sample_recipe)
+        assert result is not None
+        assert result["name"] == "Garlic Chicken"
+        assert result["url"] == "https://example.com/garlic-chicken"
+
+    def test_spoonacular_shape(self) -> None:
+        raw = {"title": "Pasta", "sourceUrl": "https://spoon.com/pasta", "readyInMinutes": 25}
+        result = _normalise_recipe(raw)
+        assert result is not None
+        assert result["name"] == "Pasta"
+        assert result["cook_time_minutes"] == 25
+
+    def test_no_name_or_url_returns_none(self) -> None:
+        assert _normalise_recipe({"ingredient_list": ["egg"]}) is None
+
+    def test_non_dict_returns_none(self) -> None:
+        assert _normalise_recipe("not a dict") is None  # type: ignore[arg-type]
+        assert _normalise_recipe(None) is None  # type: ignore[arg-type]
+        assert _normalise_recipe(42) is None  # type: ignore[arg-type]
+
+    def test_source_derived_from_url(self) -> None:
+        raw = {"name": "Pasta", "url": "https://www.allrecipes.com/pasta-recipe"}
+        result = _normalise_recipe(raw)
+        assert result is not None
+        assert result["source"] == "Allrecipes"
+
+
+# ---------------------------------------------------------------------------
+# _unwrap_tool_list
+# ---------------------------------------------------------------------------
+
+
+class TestUnwrapToolList:
+    def test_plain_dict_list(self) -> None:
+        raw = [{"name": "Pasta", "url": "https://example.com"}]
+        result = _unwrap_tool_list(raw)
+        assert result == [{"name": "Pasta", "url": "https://example.com"}]
+
+    def test_text_content_wrapping(self) -> None:
+        import json
+        inner = [{"name": "Soup", "url": "https://soup.com"}]
+        raw = [{"type": "text", "text": json.dumps(inner)}]
+        result = _unwrap_tool_list(raw)
+        assert result == inner
+
+    def test_text_content_single_dict(self) -> None:
+        import json
+        inner = {"name": "Salad", "url": "https://salad.com"}
+        raw = [{"type": "text", "text": json.dumps(inner)}]
+        result = _unwrap_tool_list(raw)
+        assert result == [inner]
+
+    def test_empty_input(self) -> None:
+        assert _unwrap_tool_list([]) == []
+        assert _unwrap_tool_list(None) == []  # type: ignore[arg-type]
+
+    def test_json_string_item(self) -> None:
+        import json
+        inner = {"name": "Stew", "url": "https://stew.com"}
+        result = _unwrap_tool_list([json.dumps(inner)])
+        assert result == [inner]
+
+    def test_invalid_json_text_skipped(self) -> None:
+        raw = [{"type": "text", "text": "not valid json"}]
+        result = _unwrap_tool_list(raw)
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# _source_from_url
+# ---------------------------------------------------------------------------
+
+
+class TestSourceFromUrl:
+    def test_allrecipes(self) -> None:
+        assert _source_from_url("https://www.allrecipes.com/recipe/123") == "Allrecipes"
+
+    def test_foodnetwork(self) -> None:
+        assert _source_from_url("https://www.foodnetwork.com/recipes/abc") == "Foodnetwork"
+
+    def test_empty_url(self) -> None:
+        assert _source_from_url("") == ""
+
+    def test_malformed_url(self) -> None:
+        result = _source_from_url("not-a-url")
+        assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# _parse_recipe_json
+# ---------------------------------------------------------------------------
+
+
+class TestParseRecipeJson:
+    def test_valid_json_array(self) -> None:
+        text = '[{"name": "Pasta", "url": "https://example.com"}]'
+        result = _parse_recipe_json(text)
+        assert len(result) == 1
+        assert result[0]["name"] == "Pasta"
+
+    def test_markdown_fenced(self) -> None:
+        text = '```json\n[{"name": "Soup"}]\n```'
+        result = _parse_recipe_json(text)
+        assert len(result) == 1
+
+    def test_invalid_json_returns_empty(self) -> None:
+        assert _parse_recipe_json("sorry, I can't help") == []
+
+    def test_filters_non_dict_elements(self) -> None:
+        text = '[{"name": "Pasta"}, "not a dict", 42]'
+        result = _parse_recipe_json(text)
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# SearchAgent.run()
+# ---------------------------------------------------------------------------
+
+
+def _make_recipe(name: str, url: str, cuisine: str | None = None) -> dict:
+    return {
+        "name": name,
+        "url": url,
+        "source": "Test",
+        "ingredient_list": [],
+        "steps_summary": "",
+        "cook_time_minutes": None,
+        "cuisine": cuisine,
+        "dietary_tags": [],
+    }
+
+
+class TestSearchAgentRun:
+    @pytest.mark.asyncio
+    async def test_concurrent_fetch(self, state: AgentState) -> None:
+        """Both _search_tavily and _search_spoonacular are invoked and their
+        results merged into search_results.
+
+        NOTE: ADR-004 documents that the implementation runs these calls
+        sequentially (not via asyncio.gather) to avoid Windows ProactorEventLoop
+        IOCP hangs.  This test therefore verifies that both sources are called
+        and their results combined, which is the observable contract regardless
+        of whether execution is concurrent or sequential.
+        """
+        agent = SearchAgent()
+        tavily_mock = AsyncMock(return_value=[_make_recipe("Tavily Recipe", "https://t.com/1")])
+        spoon_mock = AsyncMock(return_value=[_make_recipe("Spoon Recipe", "https://s.com/1")])
+
+        with patch.object(agent, "_search_tavily", tavily_mock):
+            with patch.object(agent, "_search_spoonacular", spoon_mock):
+                result = await agent.run(state)
+
+        tavily_mock.assert_called_once()
+        spoon_mock.assert_called_once()
+        names = [r["name"] for r in result["search_results"]]
+        assert "Tavily Recipe" in names
+        assert "Spoon Recipe" in names
+
+    @pytest.mark.asyncio
+    async def test_deduplication(self, state: AgentState) -> None:
+        """Two results with the same URL → only one in output."""
+        agent = SearchAgent()
+        url = "https://example.com/garlic-chicken"
+        recipe = _make_recipe("Garlic Chicken", url)
+
+        with patch.object(agent, "_search_tavily", AsyncMock(return_value=[recipe])):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=[recipe])):
+                result = await agent.run(state)
+
+        assert len(result["search_results"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_filter_applied(self, state: AgentState) -> None:
+        """Filter {"cuisine": "Italian"} excludes non-Italian results."""
+        state["filters"] = {"cuisine": "Italian"}
+        agent = SearchAgent()
+        recipes = [
+            _make_recipe("Pasta Carbonara", "https://example.com/pasta", cuisine="Italian"),
+            _make_recipe("Beef Tacos", "https://example.com/tacos", cuisine="Mexican"),
+            _make_recipe("Sushi", "https://example.com/sushi", cuisine="Japanese"),
+        ]
+
+        with patch.object(agent, "_search_tavily", AsyncMock(return_value=recipes)):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=[])):
+                result = await agent.run(state)
+
+        assert len(result["search_results"]) == 1
+        assert result["search_results"][0]["name"] == "Pasta Carbonara"
+
+    @pytest.mark.asyncio
+    async def test_one_source_fails(self, state: AgentState) -> None:
+        """Tavily raises; Spoonacular returns 3 results → search_results populated,
+        search_error NOT set."""
+        agent = SearchAgent()
+        spoon_recipes = [
+            _make_recipe("Lemon Chicken", "https://spoon.com/1"),
+            _make_recipe("Garlic Shrimp", "https://spoon.com/2"),
+            _make_recipe("Pasta Primavera", "https://spoon.com/3"),
+        ]
+
+        with patch.object(agent, "_search_tavily", AsyncMock(side_effect=RuntimeError("Tavily down"))):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=spoon_recipes)):
+                result = await agent.run(state)
+
+        assert len(result["search_results"]) == 3
+        assert result["search_error"] is None
+
+    @pytest.mark.asyncio
+    async def test_both_sources_fail(self, state: AgentState) -> None:
+        """Both sources raise → search_error set, search_results empty."""
+        agent = SearchAgent()
+
+        with patch.object(agent, "_search_tavily", AsyncMock(side_effect=RuntimeError("Tavily down"))):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(side_effect=RuntimeError("Spoon down"))):
+                result = await agent.run(state)
+
+        assert result["search_results"] == []
+        assert result["search_error"] is not None
+        assert "Both sources failed" in result["search_error"]
+
+    @pytest.mark.asyncio
+    async def test_successful_search_populates_results(
+        self, state: AgentState
+    ) -> None:
+        agent = SearchAgent()
+        fake_recipes = [_make_recipe("Garlic Chicken", "https://example.com/1", cuisine="Italian")]
+        fake_recipes[0]["ingredient_list"] = ["chicken", "garlic"]
+        fake_recipes[0]["cook_time_minutes"] = 30
+
+        with patch.object(agent, "_search_tavily", AsyncMock(return_value=fake_recipes)):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=[])):
+                result = await agent.run(state)
+
+        assert len(result["search_results"]) == 1
+        assert result["search_results"][0]["name"] == "Garlic Chicken"
+        assert result["search_error"] is None
+        assert result["current_step"] == "scoring"
+
+    @pytest.mark.asyncio
+    async def test_per_source_counts_tracked(self, state: AgentState) -> None:
+        agent = SearchAgent()
+        tavily_recipes = [
+            _make_recipe("R1", "https://a.com/1"),
+            _make_recipe("R2", "https://a.com/2"),
+        ]
+        spoon_recipes = [_make_recipe("R3", "https://b.com/1")]
+
+        with patch.object(agent, "_search_tavily", AsyncMock(return_value=tavily_recipes)):
+            with patch.object(agent, "_search_spoonacular", AsyncMock(return_value=spoon_recipes)):
+                result = await agent.run(state)
+
+        assert result["tavily_recipe_count"] == 2
+        assert result["spoonacular_recipe_count"] == 1

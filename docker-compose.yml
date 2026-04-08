@@ -1,0 +1,14 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      # Mount backend for live reload during development.
+      # Remove this volume in production to use the baked-in copy.
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
