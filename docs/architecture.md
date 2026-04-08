@@ -156,10 +156,11 @@ See `.env.example` for the full list.  Key variables:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /pantry/{session_id}` | Returns `parsed_ingredients` from LangGraph MemorySaver checkpoint |
-| `DELETE /pantry/{session_id}` | Clears `parsed_ingredients` in checkpoint via `graph.aupdate_state` |
+| `GET /pantry/{session_id}` | Returns `parsed_ingredients` from SQLite (`data/pantry.db`) |
+| `DELETE /pantry/{session_id}` | Clears pantry rows for the session from SQLite |
 
-Both return 200 even when no checkpoint exists (`[]` / `{"cleared": true}`).
+Both return 200 even when no rows exist (`[]` / `{"cleared": true}`).
+Reads/writes SQLite directly — not the LangGraph MemorySaver checkpoint (updated 2026-04-07).
 
 ---
 

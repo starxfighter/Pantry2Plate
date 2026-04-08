@@ -4,13 +4,11 @@
 
 ## ▶ RESUME HERE
 
-**Last session ended:** 2026-04-07
-**Stopped at:** All backlog and gap items completed. 197 tests passing, 87% coverage, 0 ruff errors.
+**Last session ended:** 2026-04-08
+**Stopped at:** v1.1.0 shipped — PR merged develop → main, tagged and released on GitHub.
 
 **Next action:**
-- Docker: manual install WSL2 (`wsl --install`, reboot) + Docker Desktop (`winget install Docker.DockerDesktop`), then `docker compose up --build`
-- GitHub Actions: add integration test job (requires API key secrets in repo settings)
-- Open question: consider merging develop → main via PR once the above are tested
+- Desktop launch feature (v1.1.0 follow-up): StaticFiles mount in main.py + launch.vbs + launch.bat + desktop shortcut instructions
 
 **Known state:**
 - 197 tests: 183 unit + 14 integration, 2 skipped (live graph tests, need real API key)
@@ -27,6 +25,21 @@
 ---
 
 ## Session Log
+
+### 2026-04-08 — Session 11 (Docker, CI, housekeeping, v1.1.0 release)
+
+**Completed:**
+- Installed WSL2 + Docker Desktop; `docker compose up --build` runs clean; `GET /health` confirmed `{"status":"ok","mcp_servers_running":true}`
+- Added `integration` job to `.github/workflows/ci.yml` — runs after unit job, injects API key secrets, runs `pytest tests/integration/ -v -m integration`; both jobs passed clean on GitHub Actions
+- Backfilled three missing env vars into `.env`: `SPOONACULAR_ENABLED`, `SEARCH_TIMEOUT_SECONDS`, `PANTRY_DB_PATH`
+- Fixed stale line in `docs/architecture.md`: pantry endpoints now correctly documented as SQLite (not MemorySaver)
+- Marked Docker and GitHub Actions backlog items complete in `todo.md`
+- Added Desktop Launch feature to `todo.md` for next session
+- Merged develop → main via PR; tagged and released v1.1.0 on GitHub
+
+**Blockers:** None
+
+---
 
 ### 2026-04-07 — Session 10 (Backlog + Gap fixes)
 
